@@ -1155,9 +1155,7 @@ async def launch_program(
         problems = []
         for team in teams_needing_captain:
             candidates = [player for player in team.players if player.active and player.telegram_user_id]
-            if not team.telegram_chat_id:
-                problems.append(f"{team.name}: не подключена Telegram-беседа")
-            elif len(candidates) < 2:
+            if len(candidates) < 2:
                 problems.append(f"{team.name}: меньше двух зарегистрированных участников")
         if problems:
             raise HTTPException(409, "Нельзя начать выбор капитанов. " + "; ".join(problems))
@@ -1741,8 +1739,6 @@ async def start_captain_election(
     team = db.get(Team, team_id)
     if not team or team.event_id != event_id:
         raise HTTPException(404, "Команда не найдена")
-    if not team.telegram_chat_id:
-        raise HTTPException(409, "Укажите Telegram chat ID команды")
     if not get_settings().telegram_bot_token:
         raise HTTPException(409, "TELEGRAM_BOT_TOKEN не настроен")
     candidates = [player for player in team.players if player.active and player.telegram_user_id]
@@ -1758,17 +1754,27 @@ async def start_captain_election(
         for player in candidates
     ])
     bot = Bot(get_settings().telegram_bot_token)
+    delivered = 0
+    failed = 0
     try:
-        message = await bot.send_message(
-            team.telegram_chat_id,
-            "Выберите капитана команды. Голосовать за себя нельзя — выберите другого участника.\n\n"
-            f"Проголосовало: 0 из {len(candidates)}.",
-            reply_markup=keyboard,
-        )
-        election.telegram_message_id = str(message.message_id)
+        for player in candidates:
+            text = (
+                "Команда капитанын таңдаңыз. Өзіңізге дауыс беруге болмайды — басқа қатысушыны таңдаңыз.\n\n"
+                if player.preferred_language == "KK" else
+                "Выберите капитана команды. Голосовать за себя нельзя — выберите другого участника.\n\n"
+            ) + f"Проголосовало: 0 из {len(candidates)}."
+            try:
+                await bot.send_message(player.telegram_user_id, text, reply_markup=keyboard)
+                delivered += 1
+            except Exception:
+                failed += 1
     finally:
         await bot.session.close()
-    audit(db, actor, "captain_election.start", team, f"election={election.id}")
+    if delivered < 2:
+        db.delete(election)
+        db.rollback()
+        raise HTTPException(409, "Не удалось доставить голосование минимум двум участникам команды")
+    audit(db, actor, "captain_election.start", team, f"election={election.id}; delivered={delivered}; failed={failed}")
     db.commit()
     return go(event_id, "people")
 
@@ -1800,21 +1806,20 @@ async def finish_captain_election(
     election.finished_at = datetime.utcnow()
     audit(db, actor, "captain_election.finish", team, f"winner={winner.id}; votes={counts[0].votes}")
     db.commit()
-    if team.telegram_chat_id and get_settings().telegram_bot_token:
+    recipients = [player for player in team.players if player.active and player.telegram_user_id]
+    if recipients and get_settings().telegram_bot_token:
         bot = Bot(get_settings().telegram_bot_token)
         try:
-            if election.telegram_message_id:
+            for player in recipients:
                 try:
-                    await bot.edit_message_text(
-                        chat_id=team.telegram_chat_id,
-                        message_id=int(election.telegram_message_id),
-                        text=f"✅ Голосование завершено.\nКапитан команды: {winner.full_name}",
-                        reply_markup=None,
+                    text = (
+                        f"✅ Дауыс беру аяқталды.\nКоманда капитаны: {winner.full_name}"
+                        if player.preferred_language == "KK" else
+                        f"✅ Голосование завершено.\nКапитан команды: {winner.full_name}"
                     )
+                    await bot.send_message(player.telegram_user_id, text)
                 except Exception:
-                    await bot.send_message(team.telegram_chat_id, f"Капитан команды выбран: {winner.full_name}")
-            else:
-                await bot.send_message(team.telegram_chat_id, f"Капитан команды выбран: {winner.full_name}")
+                    pass
         finally:
             await bot.session.close()
     return go(event_id, "people")

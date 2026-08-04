@@ -26,6 +26,7 @@ class InputState(StatesGroup):
     language = State()
     registration_code = State()
     registration_name = State()
+    registration_confirm = State()
     registration_team = State()
     personal_answer = State()
     team_answer = State()
@@ -88,7 +89,7 @@ async def show_pending_status(message: Message, pending: dict):
 async def require_player(message: Message):
     info = await player_info(message)
     if not info:
-        await message.answer("Сначала зарегистрируйтесь: нажмите /start и введите код ивента.")
+        await message.answer("Сначала зарегистрируйтесь: нажмите /start.")
     return info
 
 
@@ -268,9 +269,36 @@ async def registration_code(message: Message, state: FSMContext):
 
 @router.message(InputState.registration_name)
 async def registration_name(message: Message, state: FSMContext):
-    if not (message.text or "").strip():
-        await message.answer("Введите имя текстом.")
+    full_name = " ".join((message.text or "").split())
+    if len(full_name) < 3:
+        data = await state.get_data()
+        await message.answer("Аты-жөніңізді мәтінмен енгізіңіз." if data.get("language") == "KK" else "Введите имя и фамилию текстом.")
         return
+    data = await state.get_data()
+    await state.update_data(full_name=full_name)
+    await state.set_state(InputState.registration_confirm)
+    kk = data.get("language") == "KK"
+    await message.answer(
+        (f"Енгізілген аты-жөні: {full_name}\n\nБарлығы дұрыс па?" if kk else
+         f"Вы указали: {full_name}\n\nВсё правильно?"),
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text="✅ Иә, дұрыс" if kk else "✅ Да, всё правильно")],
+                      [KeyboardButton(text="✏️ Өзгерту" if kk else "✏️ Исправить имя")]],
+            resize_keyboard=True,
+            one_time_keyboard=True,
+        ),
+    )
+
+
+@router.message(InputState.registration_confirm, F.text.in_({"✏️ Исправить имя", "✏️ Өзгерту"}))
+async def registration_name_retry(message: Message, state: FSMContext):
+    data = await state.get_data()
+    await state.set_state(InputState.registration_name)
+    await message.answer("Аты-жөніңізді қайта енгізіңіз." if data.get("language") == "KK" else "Введите имя и фамилию ещё раз.")
+
+
+@router.message(InputState.registration_confirm, F.text.in_({"✅ Да, всё правильно", "✅ Иә, дұрыс"}))
+async def registration_confirm(message: Message, state: FSMContext):
     data = await state.get_data()
     try:
         with SessionLocal() as db:
@@ -283,7 +311,7 @@ async def registration_name(message: Message, state: FSMContext):
                 raise GameError("Заявка этого Telegram-аккаунта уже создана.")
             pending = PendingRegistration(
                 event_id=data["event_id"],
-                full_name=message.text.strip(),
+                full_name=data["full_name"],
                 telegram_user_id=str(message.from_user.id),
                 telegram_username=message.from_user.username,
                 preferred_language=data.get("language", "RU"),
@@ -292,13 +320,22 @@ async def registration_name(message: Message, state: FSMContext):
             db.commit()
         await state.clear()
         await show_pending_status(message, {
-            "name": message.text.strip(),
+            "name": data["full_name"],
             "event_name": data["event_name"],
             "language": data.get("language", "RU"),
         })
     except GameError as exc:
         await state.clear()
         await message.answer(str(exc))
+
+
+@router.message(InputState.registration_confirm)
+async def registration_confirm_unknown(message: Message, state: FSMContext):
+    data = await state.get_data()
+    await message.answer(
+        "Төмендегі батырмалардың бірін таңдаңыз." if data.get("language") == "KK" else
+        "Выберите одну из кнопок ниже."
+    )
 
 
 @router.message(InputState.registration_team)
@@ -580,6 +617,7 @@ async def save_answer(message: Message, state: FSMContext, scope: AnswerScope):
 async def captain_vote(callback: CallbackQuery):
     _, election_id, candidate_id = callback.data.split(":")
     winner_name = None
+    winner_recipients: list[tuple[str, str]] = []
     candidate_name = None
     vote_count = eligible_count = 0
     with SessionLocal() as db:
@@ -634,6 +672,10 @@ async def captain_vote(callback: CallbackQuery):
                 election.active = False
                 election.finished_at = datetime.utcnow()
                 winner_name = winner.full_name
+                winner_recipients = [
+                    (teammate.telegram_user_id, teammate.preferred_language)
+                    for teammate in teammates if teammate.active and teammate.telegram_user_id
+                ]
         db.commit()
     await callback.answer(f"Ваш голос принят: {candidate_name}", show_alert=True)
     if callback.message:
@@ -657,6 +699,19 @@ async def captain_vote(callback: CallbackQuery):
         except Exception:
             # Голос уже сохранён; ошибка обновления сообщения не должна его отменять.
             pass
+    if winner_name:
+        for telegram_user_id, language in winner_recipients:
+            if str(telegram_user_id) == str(callback.from_user.id):
+                continue
+            try:
+                text = (
+                    f"✅ Дауыс беру аяқталды.\nКоманда капитаны: {winner_name}"
+                    if language == "KK" else
+                    f"✅ Голосование завершено.\nКапитан команды: {winner_name}"
+                )
+                await callback.bot.send_message(telegram_user_id, text)
+            except Exception:
+                pass
 
 
 @router.message(F.text.in_({"🕵️ Моя улика", "🕵️ Менің айғағым"}))
