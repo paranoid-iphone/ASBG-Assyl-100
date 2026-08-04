@@ -15,6 +15,7 @@ body{margin:0;background:#0c1220;color:#f8fafc;font-family:Inter,system-ui;overf
 .bilingual{display:grid;grid-template-columns:1fr 1fr;gap:4vw;width:100%;align-items:center}.language-block{padding:1vw 2vw}.language-block+.language-block{border-left:1px solid #ffffff28}.lang{font-size:1vw;color:#91a7ff;text-transform:uppercase;letter-spacing:.15em;font-weight:800;margin-bottom:1.2vw}.bilingual .question{font-size:2.7vw}.bilingual .answer{font-size:3.5vw}.bilingual .explanation{font-size:1.4vw}
 .timer{font-size:15vw;line-height:1;font-weight:900;font-variant-numeric:tabular-nums;color:#fff}.timer.danger{color:#ff6b6b}
 .answer{font-size:5vw;font-weight:850;margin:.2em 0;color:#7ee7b7;max-width:88vw}.explanation{font-size:1.8vw;color:#c5cee0;max-width:80vw}
+.screen-action{margin-top:2vw;border:1px solid #7794ff;background:#3457d5;color:#fff;border-radius:14px;padding:1vw 2vw;font-size:1.5vw;font-weight:800;cursor:pointer;box-shadow:0 10px 35px #152a7a66}.screen-action:hover{background:#4568e5}.screen-action:disabled{opacity:.5;cursor:wait}
 .answer-wall{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.2vw;width:min(1200px,90vw);max-height:72vh;overflow:hidden}.answer-card{background:#ffffff12;border:1px solid #ffffff24;border-radius:16px;padding:1.2vw 1.5vw;font-size:1.65vw;text-align:left}.answer-card small{display:block;color:#aeb8ca;margin-top:.5vw}
 .options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.7vw 2vw;max-width:82vw;margin:1.2vw auto 0;text-align:left;font-size:1.55vw;color:#dbe4f7}.option{padding:.55vw 1vw;border-left:3px solid #91a7ff;background:#ffffff0a;border-radius:4px}
 .hint{position:fixed;right:20px;bottom:16px;color:#ffffff88;font-size:13px}.volume{position:fixed;left:20px;bottom:14px;display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;background:#08101dcc;color:#d7deeb;font-size:13px;z-index:5}.volume input{width:150px;accent-color:#91a7ff}.volume output{min-width:38px;text-align:right;font-variant-numeric:tabular-nums}.busy{pointer-events:none}
@@ -59,7 +60,7 @@ function render(d){
   }else if(d.mode==='CAPTAIN_ELECTION_READY'||d.mode==='CAPTAIN_ELECTION_RUNNING'){
     const election=d.captain_election||{},time=d.timer.remaining===null?'01:00':`${String(Math.floor(d.timer.remaining/60)).padStart(2,'0')}:${String(d.timer.remaining%60).padStart(2,'0')}`;
     const ready=d.mode==='CAPTAIN_ELECTION_READY';
-    html=`<div class="eyebrow">Выбор капитанов / Капитандарды таңдау</div><div class="center"><div class="event" style="font-size:4vw">Зайдите в Telegram-бот</div><div class="description">Выберите капитана своей команды · Команда капитанын таңдаңыз</div><div class="timer ${d.timer.remaining<=10?'danger':''}" style="font-size:8vw;margin-top:.2em">${time}</div><div class="description">Капитаны выбраны: ${election.selected||0} из ${election.total||0}${ready?'<br>Нажмите «Старт», чтобы разослать голосование':''}</div></div>`;
+    html=`<div class="eyebrow">Выбор капитанов / Капитандарды таңдау</div><div class="center"><div class="event" style="font-size:4vw">${ready?'Выберите капитанов':'Голосование идёт'}</div><div class="description">Выберите капитана своей команды · Команда капитанын таңдаңыз</div><div class="timer ${d.timer.remaining<=10?'danger':''}" style="font-size:8vw;margin-top:.2em">${time}</div><div class="description">Капитаны выбраны: ${election.selected||0} из ${election.total||0}</div>${ready?'<button type="button" id="electionStartMain" class="screen-action">Разослать голосование за капитана<br><small>Капитанды таңдау дауысын жіберу</small></button>':''}</div>`;
   }else if(d.mode==='CAPTAIN_ELECTION_COMPLETE'){
     html=`<div class="eyebrow">Выбор капитанов завершён</div><div class="center"><div class="event" style="font-size:4.5vw">Капитаны выбраны!</div><div class="description">Результат отправлен каждому участнику · Нәтиже әр қатысушыға жіберілді</div></div>`;
   }else if(d.mode==='RULES'){
@@ -98,9 +99,10 @@ function render(d){
     html=`<div class="center"><div class="event">${esc(d.event)}</div></div>`;
   }
   app.innerHTML=html;
+  document.getElementById('electionStartMain')?.addEventListener('click',event=>{event.stopPropagation();timerCommand('start')});
   const captainTimer=d.mode==='CAPTAIN_ELECTION_READY'||d.mode==='CAPTAIN_ELECTION_RUNNING';
   timerTools.classList.toggle('visible',d.mode.startsWith('TIMER')||d.mode.startsWith('SUBMISSION')||d.mode==='DETECTIVE'||captainTimer);
-  timerPlay.hidden=!(d.timer.ready||d.timer.paused||d.mode==='CAPTAIN_ELECTION_READY');
+  timerPlay.hidden=captainTimer||!(d.timer.ready||d.timer.paused);
   timerPause.hidden=!d.timer.running||captainTimer;
   timerReset.hidden=!(d.mode.startsWith('TIMER')||d.mode.startsWith('SUBMISSION'));
 }
