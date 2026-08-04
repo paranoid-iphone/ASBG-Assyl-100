@@ -1354,6 +1354,11 @@ async def launch_program(
     db: Session = Depends(get_db), actor=Depends(admin_auth),
 ):
     event = require_event(db, event_id)
+    # Synchronize the fixed event structure at the point of launch as well as
+    # when the editor is opened. This also upgrades older databases where the
+    # practice stage existed without its zero-point question.
+    ensure_fixed_program(db, event)
+    db.flush()
     program = db.scalar(select(GameProgram).options(
         selectinload(GameProgram.stage_links).selectinload(GameProgramStage.stage).selectinload(Stage.questions)
     ).where(GameProgram.id == program_id, GameProgram.event_id == event_id))
