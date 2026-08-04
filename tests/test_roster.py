@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 
 from app.database import Base, SessionLocal, engine
 from app.main import app
-from app.models import Event, PendingRegistration, Player, Team
+from app.models import Event, GameProgram, PendingRegistration, Player, PlayerRole, Team
 
 
 def setup_function():
@@ -63,3 +63,27 @@ def test_deleting_team_returns_telegram_players_to_pool():
     with SessionLocal() as db:
         assert db.get(Team, team_id) is None
         assert db.scalar(select(func.count(PendingRegistration.id))) == 1
+
+
+def test_running_game_cannot_partially_change_player():
+    event_id, team_id, player_id = create_registered_player()
+    with SessionLocal() as db:
+        db.add(GameProgram(event_id=event_id, title="Running", status="RUNNING"))
+        db.commit()
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/admin/events/{event_id}/players/{player_id}",
+            auth=("admin", "change-me"),
+            data={
+                "full_name": "Changed name", "role": PlayerRole.CAPTAIN.value,
+                "team_id": team_id, "active": "true",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 409
+
+    with SessionLocal() as db:
+        player = db.get(Player, player_id)
+        assert player.full_name != "Changed name"
+        assert player.role == PlayerRole.PLAYER

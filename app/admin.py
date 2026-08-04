@@ -71,6 +71,7 @@ def require_roster_unlocked(db: Session, event_id: int) -> None:
         GameProgram.status == "RUNNING",
     ))
     if running_program:
+        db.rollback()
         raise HTTPException(
             409,
             "Составы заблокированы на время игры. Используйте временного отправителя на пульте проведения.",
@@ -263,6 +264,7 @@ def event_dashboard(
         "tab": tab, "event": event, "teams": teams, "players": players,
         "pending_registrations": pending_registrations, "stages": stages, "programs": programs,
         "active_program": active_program,
+        "roster_locked": active_program is not None,
         "notice": request.query_params.get("notice", ""),
         "answers": answers, "answer_counts": answer_counts, "logs": logs, "active_question": active_question,
         "board": leaderboard(db, event.id), "roles": PlayerRole,
