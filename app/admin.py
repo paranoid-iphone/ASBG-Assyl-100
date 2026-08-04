@@ -521,6 +521,43 @@ def show_service_slide(
     return {"ok": True}
 
 
+@router.post("/events/{event_id}/live/questions/{question_id}/preview")
+def preview_question_on_screen(
+    event_id: int,
+    question_id: int,
+    db: Session = Depends(get_db),
+    actor: str = Depends(admin_auth),
+):
+    """Show a question without reopening it or changing the active answer window."""
+    event = require_event(db, event_id)
+    question = db.get(Question, question_id)
+    if not question or question.stage.event_id != event.id:
+        raise HTTPException(404, "Вопрос не найден")
+    elapsed = (datetime.utcnow() - event.timer_started_at).total_seconds() if event.timer_started_at else None
+    remaining = max(0, event.timer_duration_seconds - int(elapsed)) if elapsed is not None else None
+    history = SCREEN_HISTORY.setdefault(event.id, [])
+    history.append({
+        "display_mode": event.display_mode,
+        "current_question_id": event.current_question_id,
+        "current_detective_stage_id": event.current_detective_stage_id,
+        "timer_duration_seconds": event.timer_duration_seconds,
+        "timer_remaining": remaining,
+        "slide": dict(CUSTOM_SLIDES.get(event.id) or {}),
+    })
+    del history[:-30]
+    CUSTOM_SLIDES[event.id] = {
+        "title": f"{question.stage.title} · {question.title}",
+        "text": question.text,
+        "title_kk": f"{question.stage.title_kk or question.stage.title} · {question.title_kk or question.title}",
+        "text_kk": question.text_kk or question.text,
+    }
+    event.display_mode = "SLIDE"
+    event.timer_started_at = None
+    audit(db, actor, "live.question_preview", question, "view_only")
+    db.commit()
+    return {"ok": True, "view_only": True}
+
+
 @router.post("/events/{event_id}/live/teams/{team_id}/temporary-sender")
 def set_temporary_sender(
     event_id: int,
