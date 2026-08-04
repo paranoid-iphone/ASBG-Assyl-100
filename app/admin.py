@@ -24,6 +24,7 @@ from .models import (
 )
 from .services import adjust_score, audit, grade_all_answers, grade_answer, leaderboard, set_question_status, submit_detective_answer
 from .runtime_state import CLUE_DELIVERY, CUSTOM_SLIDES, SCREEN_HEARTBEATS, SCREEN_HISTORY, TEAM_DELIVERY, TEMPORARY_SENDERS, mark_team_delivery
+from .public_url import public_base_url
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -213,6 +214,8 @@ def event_dashboard(
     ).all()
     logs = db.scalars(select(AuditLog).where(AuditLog.event_id == event.id).order_by(AuditLog.id.desc()).limit(150)).all()
     active_question = db.get(Question, event.current_question_id) if event.current_question_id else None
+    base_url, public_url_source = public_base_url(str(request.base_url))
+    public_screen_url = f"{base_url}/screen/{event.display_token}"
     template_name = "content_page.html" if tab == "content" else "event_dashboard.html"
     return templates.TemplateResponse(request, template_name, {
         "tab": tab, "event": event, "teams": teams, "players": players,
@@ -222,6 +225,8 @@ def event_dashboard(
         "board": leaderboard(db, event.id), "roles": PlayerRole,
         "stage_types": StageType, "detective_statuses": DetectiveStatus,
         "question_types": QuestionType,
+        "public_screen_url": public_screen_url,
+        "public_url_source": public_url_source,
         "question_options": {
             question.id: "\n".join(json.loads(question.options_json or "[]"))
             for stage in stages for question in stage.questions
