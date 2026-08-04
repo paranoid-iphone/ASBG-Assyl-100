@@ -46,4 +46,5 @@ def ensure_schema_compatibility():
     election_columns = {column["name"] for column in inspect(engine).get_columns("captain_elections")}
     if "expires_at" not in election_columns:
         with engine.begin() as connection:
-            connection.execute(text("ALTER TABLE captain_elections ADD COLUMN expires_at DATETIME"))
+            # TIMESTAMP works in PostgreSQL and SQLite; PostgreSQL has no DATETIME type.
+            connection.execute(text("ALTER TABLE captain_elections ADD COLUMN expires_at TIMESTAMP"))
