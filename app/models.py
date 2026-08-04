@@ -67,6 +67,8 @@ class Event(Base):
     default_team_points: Mapped[float] = mapped_column(Float, default=5)
     timer_sound_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     display_language: Mapped[str] = mapped_column(String(10), default="BOTH")
+    screen_history_json: Mapped[str] = mapped_column(Text, default="[]")
+    screen_future_json: Mapped[str] = mapped_column(Text, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     teams: Mapped[list[Team]] = relationship(back_populates="event", cascade="all, delete-orphan")

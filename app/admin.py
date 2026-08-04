@@ -24,7 +24,10 @@ from .models import (
     QuestionType, ScoreAdjustment, Stage, StageType, Team, TeamQuestionPrompt,
 )
 from .services import adjust_score, audit, grade_all_answers, grade_answer, leaderboard, set_question_status, submit_detective_answer
-from .runtime_state import CLUE_DELIVERY, CUSTOM_SLIDES, SCREEN_HEARTBEATS, SCREEN_HISTORY, TEAM_DELIVERY, TEMPORARY_SENDERS, mark_team_delivery
+from .runtime_state import (
+    CLUE_DELIVERY, CUSTOM_SLIDES, SCREEN_HEARTBEATS, TEAM_DELIVERY, TEMPORARY_SENDERS,
+    clear_persistent_navigation, mark_team_delivery, push_persistent_history,
+)
 from .public_url import public_base_url
 from .seed_game_content import seed_game_content_for_event
 from .fixed_program import ensure_fixed_program
@@ -498,18 +501,7 @@ def show_service_slide(
     db: Session = Depends(get_db), actor: str = Depends(admin_auth),
 ):
     event = require_event(db, event_id)
-    elapsed = (datetime.utcnow() - event.timer_started_at).total_seconds() if event.timer_started_at else None
-    remaining = max(0, event.timer_duration_seconds - int(elapsed)) if elapsed is not None else None
-    history = SCREEN_HISTORY.setdefault(event.id, [])
-    history.append({
-        "display_mode": event.display_mode,
-        "current_question_id": event.current_question_id,
-        "current_detective_stage_id": event.current_detective_stage_id,
-        "timer_duration_seconds": event.timer_duration_seconds,
-        "timer_remaining": remaining,
-        "slide": dict(CUSTOM_SLIDES.get(event.id) or {}),
-    })
-    del history[:-30]
+    push_persistent_history(event)
     CUSTOM_SLIDES[event.id] = {
         "title": title.strip(), "text": text.strip(),
         "title_kk": title_kk.strip(), "text_kk": text_kk.strip(),
@@ -533,18 +525,7 @@ def preview_question_on_screen(
     question = db.get(Question, question_id)
     if not question or question.stage.event_id != event.id:
         raise HTTPException(404, "Вопрос не найден")
-    elapsed = (datetime.utcnow() - event.timer_started_at).total_seconds() if event.timer_started_at else None
-    remaining = max(0, event.timer_duration_seconds - int(elapsed)) if elapsed is not None else None
-    history = SCREEN_HISTORY.setdefault(event.id, [])
-    history.append({
-        "display_mode": event.display_mode,
-        "current_question_id": event.current_question_id,
-        "current_detective_stage_id": event.current_detective_stage_id,
-        "timer_duration_seconds": event.timer_duration_seconds,
-        "timer_remaining": remaining,
-        "slide": dict(CUSTOM_SLIDES.get(event.id) or {}),
-    })
-    del history[:-30]
+    push_persistent_history(event)
     CUSTOM_SLIDES[event.id] = {
         "title": f"{question.stage.title} · {question.title}",
         "text": question.text,
@@ -1308,6 +1289,7 @@ async def launch_program(
     event.display_mode = "INTRO"
     event.timer_started_at = None
     event.timer_duration_seconds = ELECTION_DURATION_SECONDS
+    clear_persistent_navigation(event)
     first_detail = "intro"
     audit(db, actor, "program.launch", program, first_detail)
     db.commit()

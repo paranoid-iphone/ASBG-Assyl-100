@@ -48,3 +48,12 @@ def ensure_schema_compatibility():
         with engine.begin() as connection:
             # TIMESTAMP works in PostgreSQL and SQLite; PostgreSQL has no DATETIME type.
             connection.execute(text("ALTER TABLE captain_elections ADD COLUMN expires_at TIMESTAMP"))
+    game_columns = {column["name"] for column in inspect(engine).get_columns("games")}
+    game_additions = {
+        "screen_history_json": "TEXT NOT NULL DEFAULT '[]'",
+        "screen_future_json": "TEXT NOT NULL DEFAULT '[]'",
+    }
+    with engine.begin() as connection:
+        for name, definition in game_additions.items():
+            if name not in game_columns:
+                connection.execute(text(f"ALTER TABLE games ADD COLUMN {name} {definition}"))

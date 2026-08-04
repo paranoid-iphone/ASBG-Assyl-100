@@ -15,7 +15,10 @@ from .config import get_settings
 from .captain_elections import ELECTION_DURATION_SECONDS, start_captain_election_for_team
 from .services import leaderboard, set_question_status
 from .telegram_sync import notify_team_chats
-from .runtime_state import CUSTOM_SLIDES, SCREEN_HEARTBEATS, SCREEN_HISTORY
+from .runtime_state import (
+    CUSTOM_SLIDES, SCREEN_HEARTBEATS, navigation_stack, push_persistent_history,
+    save_navigation_stack, screen_snapshot,
+)
 
 router = APIRouter(tags=["display"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -112,18 +115,7 @@ def screen_state(token: str, db: Session = Depends(get_db)):
 
 
 def push_screen_history(event: Event) -> None:
-    elapsed = (datetime.utcnow() - event.timer_started_at).total_seconds() if event.timer_started_at else None
-    remaining = max(0, event.timer_duration_seconds - int(elapsed)) if elapsed is not None else None
-    history = SCREEN_HISTORY.setdefault(event.id, [])
-    history.append({
-        "display_mode": event.display_mode,
-        "current_question_id": event.current_question_id,
-        "current_detective_stage_id": event.current_detective_stage_id,
-        "timer_duration_seconds": event.timer_duration_seconds,
-        "timer_remaining": remaining,
-        "slide": dict(CUSTOM_SLIDES.get(event.id) or {}),
-    })
-    del history[:-30]
+    push_persistent_history(event)
 
 
 def restore_screen_snapshot(db: Session, event: Event, snapshot: dict) -> None:
@@ -226,10 +218,19 @@ def teams_without_captain(event: Event) -> list[str]:
 @router.post("/api/screen/{token}/advance")
 async def advance_screen(token: str, db: Session = Depends(get_db)):
     event = event_by_token(db, token)
+    future = navigation_stack(event, "screen_future_json")
+    if future:
+        snapshot = future.pop()
+        push_persistent_history(event, clear_future=False)
+        save_navigation_stack(event, "screen_future_json", future)
+        restore_screen_snapshot(db, event, snapshot)
+        return {"action": "forward", "mode": event.display_mode}
     if event.display_mode == "SLIDE":
-        history = SCREEN_HISTORY.get(event.id, [])
+        history = navigation_stack(event, "screen_history_json")
         if history:
-            restore_screen_snapshot(db, event, history.pop())
+            snapshot = history.pop()
+            save_navigation_stack(event, "screen_history_json", history)
+            restore_screen_snapshot(db, event, snapshot)
         return {"action": "resume"}
     if event.display_mode == "INTRO":
         push_screen_history(event)
@@ -368,55 +369,48 @@ async def advance_screen(token: str, db: Session = Depends(get_db)):
 @router.post("/api/screen/{token}/back")
 def previous_screen(token: str, db: Session = Depends(get_db)):
     event = event_by_token(db, token)
-    history = SCREEN_HISTORY.get(event.id, [])
+    history = navigation_stack(event, "screen_history_json")
     if not history:
         items = ordered_program_items(db, event.id)
         current_index = next((
             index for index, (kind, content) in enumerate(items)
             if kind == "question" and content.id == event.current_question_id
         ), -1)
-        previous_question = next((
-            content for kind, content in reversed(items[:current_index]) if kind == "question"
-        ), None) if current_index > 0 else None
-        if not previous_question:
-            raise HTTPException(409, "Предыдущего вопроса в программе нет")
-        push_screen_history(event)
-        CUSTOM_SLIDES[event.id] = {
-            "title": f"{previous_question.stage.title} · {previous_question.title}",
-            "text": previous_question.text,
-            "title_kk": (
-                f"{previous_question.stage.title_kk or previous_question.stage.title} · "
-                f"{previous_question.title_kk or previous_question.title}"
-            ),
-            "text_kk": previous_question.text_kk or previous_question.text,
-        }
-        event.display_mode = "SLIDE"
-        event.timer_started_at = None
-        db.commit()
-        return {
-            "action": "previous_question_preview",
-            "question_id": previous_question.id,
-            "view_only": True,
-        }
-    restore_screen_snapshot(db, event, history.pop())
+        if current_index < 0:
+            raise HTTPException(409, "Предыдущего слайда нет")
+        history = [
+            {"display_mode": "INTRO", "current_question_id": None, "current_detective_stage_id": None, "timer_duration_seconds": 60, "timer_remaining": None, "slide": {}},
+            {"display_mode": "CAPTAIN_ELECTION_COMPLETE", "current_question_id": None, "current_detective_stage_id": None, "timer_duration_seconds": 60, "timer_remaining": None, "slide": {}},
+            {"display_mode": "RULES", "current_question_id": None, "current_detective_stage_id": None, "timer_duration_seconds": 60, "timer_remaining": None, "slide": {}},
+        ]
+        for kind, content in items[:current_index]:
+            if kind == "detective":
+                history.append({"display_mode": "DETECTIVE", "current_question_id": None, "current_detective_stage_id": content.id, "timer_duration_seconds": content.detective_duration_seconds, "timer_remaining": 0, "slide": {}})
+                continue
+            modes = [
+                ("QUESTION", content.duration_seconds),
+                ("TIMER_READY", content.duration_seconds),
+                ("SUBMISSION_READY", content.submission_seconds),
+                ("ANSWER", content.submission_seconds),
+            ]
+            if content.show_anonymous_answers:
+                modes.append(("TEAM_ANSWERS", content.submission_seconds))
+            history.extend({
+                "display_mode": mode,
+                "current_question_id": content.id,
+                "current_detective_stage_id": None,
+                "timer_duration_seconds": duration,
+                "timer_remaining": duration if mode.endswith("READY") else None,
+                "slide": {},
+            } for mode, duration in modes)
+        save_navigation_stack(event, "screen_history_json", history)
+    snapshot = history.pop()
+    future = navigation_stack(event, "screen_future_json")
+    future.append(screen_snapshot(event))
+    save_navigation_stack(event, "screen_history_json", history)
+    save_navigation_stack(event, "screen_future_json", future)
+    restore_screen_snapshot(db, event, snapshot)
     return {"action": "back", "mode": event.display_mode}
-
-
-@router.post("/api/screen/{token}/home")
-def show_welcome_screen(token: str, db: Session = Depends(get_db)):
-    """Show a safe welcome overlay without changing the current game item."""
-    event = event_by_token(db, token)
-    push_screen_history(event)
-    CUSTOM_SLIDES[event.id] = {
-        "title": event.name,
-        "text": "Добро пожаловать на интеллектуальную игру!",
-        "title_kk": event.name,
-        "text_kk": "Зияткерлік ойынға қош келдіңіздер!",
-    }
-    event.display_mode = "SLIDE"
-    event.timer_started_at = None
-    db.commit()
-    return {"action": "home"}
 
 
 @router.post("/api/screen/{token}/timer-adjust")

@@ -3,11 +3,10 @@ from fastapi.testclient import TestClient
 from app.database import Base, SessionLocal, engine
 from app.main import app
 from app.models import Event, GameProgram, GameProgramStage, Question, Stage
-from app.runtime_state import CUSTOM_SLIDES, SCREEN_HISTORY
+from app.runtime_state import CUSTOM_SLIDES
 
 
 def setup_function():
-    SCREEN_HISTORY.clear()
     CUSTOM_SLIDES.clear()
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
@@ -84,9 +83,9 @@ def test_back_falls_back_to_previous_program_question_when_history_is_empty():
     with TestClient(app) as client:
         response = client.post(f"/api/screen/{token}/back")
         assert response.status_code == 200
-        assert response.json()["action"] == "previous_question_preview"
+        assert response.json()["action"] == "back"
         state = client.get(f"/api/screen/{token}").json()
-        assert state["mode"] == "SLIDE"
-        assert state["slide"]["text"] == "First"
-        assert client.post(f"/api/screen/{token}/advance").json()["action"] == "resume"
+        assert state["mode"] == "TEAM_ANSWERS"
+        assert state["question"]["ru"]["text"] == "First"
+        assert client.post(f"/api/screen/{token}/advance").json()["action"] == "forward"
         assert client.get(f"/api/screen/{token}").json()["question"]["ru"]["text"] == "Second"
