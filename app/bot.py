@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 
 from .config import get_settings
 from .database import SessionLocal
-from .models import Answer, AnswerScope, CaptainElection, CaptainVote, DetectiveSubmission, Event, PendingRegistration, Player, PlayerRole, QuestionType, Team, TeamQuestionPrompt
+from .models import Answer, AnswerScope, CaptainElection, CaptainVote, DetectiveSubmission, Event, PendingRegistration, Player, PlayerRole, Question, QuestionType, Team, TeamQuestionPrompt
 from .services import (
     GameError, active_detective_case, active_question, detective_clue_for_player,
     get_player_by_telegram, leaderboard,
@@ -31,6 +31,7 @@ class InputState(StatesGroup):
     personal_answer = State()
     team_answer = State()
     team_explanation = State()
+    team_confirm = State()
 
 
 def main_keyboard(role: PlayerRole, language: str = "RU") -> ReplyKeyboardMarkup:
@@ -545,21 +546,81 @@ async def quiz_choice_selected(callback: CallbackQuery, state: FSMContext):
         await state.set_state(InputState.team_explanation)
         await callback.message.edit_text(f"Вы выбрали «{option}». Кратко напишите, как команда пришла к решению.")
     else:
-        await submit_team_from_state(callback.message, state, callback.from_user.id, option, "")
+        await offer_team_confirmation(callback.message, state, option, "", edit=True)
     await callback.answer()
 
 
 @router.message(InputState.team_answer)
 async def team_submit(message: Message, state: FSMContext):
-    await submit_team_from_state(message, state, message.from_user.id, message.text or "", "")
+    await offer_team_confirmation(message, state, message.text or "", "")
 
 
 @router.message(InputState.team_explanation)
 async def team_explanation_submit(message: Message, state: FSMContext):
     data = await state.get_data()
-    await submit_team_from_state(
-        message, state, message.from_user.id, data.get("selected_answer", ""), message.text or ""
+    await offer_team_confirmation(
+        message, state, data.get("selected_answer", ""), message.text or ""
     )
+
+
+async def offer_team_confirmation(
+    message: Message, state: FSMContext, text: str, explanation: str, edit: bool = False,
+):
+    """Show the captain exactly what will be locked before the irreversible submit."""
+    if not text.strip():
+        await message.answer("Ответ не может быть пустым. Введите окончательный ответ команды:")
+        return
+    current = await state.get_data()
+    with SessionLocal() as db:
+        respondent = db.get(Player, current.get("respondent_id"))
+        respondent_name = respondent.full_name if respondent else "не выбран"
+    await state.update_data(pending_answer=text.strip(), pending_explanation=explanation.strip())
+    await state.set_state(InputState.team_confirm)
+    details = f"\n\nОбъяснение: {explanation.strip()}" if explanation.strip() else ""
+    body = (
+        "Проверьте ответ перед отправкой:\n\n"
+        f"Отвечающий: {respondent_name}\n"
+        f"«{text.strip()}»{details}\n\n"
+        "После подтверждения изменить ответ будет нельзя."
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✅ Подтвердить ответ", callback_data="teamconfirm:yes"),
+        InlineKeyboardButton(text="✏️ Изменить", callback_data="teamconfirm:edit"),
+    ]])
+    if edit:
+        await message.edit_text(body, reply_markup=keyboard)
+    else:
+        await message.answer(body, reply_markup=keyboard)
+
+
+@router.callback_query(InputState.team_confirm, F.data == "teamconfirm:yes")
+async def confirm_team_answer(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    await submit_team_from_state(
+        callback.message, state, callback.from_user.id,
+        data.get("pending_answer", ""), data.get("pending_explanation", ""),
+    )
+    await callback.answer()
+
+
+@router.callback_query(InputState.team_confirm, F.data == "teamconfirm:edit")
+async def edit_team_answer(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    with SessionLocal() as db:
+        question = db.get(Question, data.get("question_id"))
+        question_type = question.question_type if question else QuestionType.TEXT
+        options = __import__("json").loads(question.options_json or "[]") if question else []
+    if question_type == QuestionType.TEXT:
+        await state.set_state(InputState.team_answer)
+        await callback.message.edit_text("Введите исправленный окончательный ответ команды:")
+    else:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=option, callback_data=f"quizchoice:{data['question_id']}:{index}")]
+            for index, option in enumerate(options)
+        ])
+        await state.set_state(InputState.team_answer)
+        await callback.message.edit_text("Выберите вариант заново:", reply_markup=keyboard)
+    await callback.answer()
 
 
 async def submit_team_from_state(message: Message, state: FSMContext, telegram_user_id: int, text: str, explanation: str):

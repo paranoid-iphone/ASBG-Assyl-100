@@ -247,6 +247,10 @@ def event_dashboard(
     answers = db.scalars(
         select(Answer).join(Question).join(Stage).where(Stage.event_id == event.id).order_by(Answer.id.desc()).limit(150)
     ).all()
+    answer_counts = dict(db.execute(
+        select(Answer.question_id, func.count(Answer.id)).join(Question).join(Stage)
+        .where(Stage.event_id == event.id).group_by(Answer.question_id)
+    ).all())
     logs = db.scalars(select(AuditLog).where(AuditLog.event_id == event.id).order_by(AuditLog.id.desc()).limit(150)).all()
     active_question = db.get(Question, event.current_question_id) if event.current_question_id else None
     base_url, public_url_source = public_base_url(str(request.base_url))
@@ -256,7 +260,7 @@ def event_dashboard(
         "tab": tab, "event": event, "teams": teams, "players": players,
         "pending_registrations": pending_registrations, "stages": stages, "programs": programs,
         "active_program": active_program,
-        "answers": answers, "logs": logs, "active_question": active_question,
+        "answers": answers, "answer_counts": answer_counts, "logs": logs, "active_question": active_question,
         "board": leaderboard(db, event.id), "roles": PlayerRole,
         "stage_types": StageType, "detective_statuses": DetectiveStatus,
         "question_types": QuestionType,
@@ -1760,6 +1764,44 @@ def answer_grade(
     answer = db.get(Answer, answer_id)
     if not answer or answer.question.stage.event_id != event_id: raise HTTPException(404, "Ответ не найден")
     grade_answer(db, answer, correct, actor, points)
+    return go(event_id, "answers")
+
+
+@router.post("/events/{event_id}/answers/{answer_id}/reset")
+def reset_answer(
+    event_id: int, answer_id: int,
+    db: Session = Depends(get_db), actor=Depends(admin_auth),
+):
+    """Remove an accidental team answer so the captain can submit it again."""
+    answer = db.get(Answer, answer_id)
+    if not answer or answer.question.stage.event_id != event_id:
+        raise HTTPException(404, "Ответ не найден")
+    question = answer.question
+    team_id = answer.team_id
+    label = answer.team.name if answer.team else "личный ответ"
+    db.delete(answer)
+    if team_id is not None:
+        TEMPORARY_SENDERS.pop((question.id, team_id), None)
+    audit(db, actor, "answer.reset", question, f"{label}: ответ удалён для повторной отправки")
+    db.commit()
+    return go(event_id, "answers")
+
+
+@router.post("/events/{event_id}/questions/{question_id}/answers/reset")
+def reset_question_answers(
+    event_id: int, question_id: int,
+    db: Session = Depends(get_db), actor=Depends(admin_auth),
+):
+    """Clear every answer for a question after an operator mistake or rehearsal."""
+    question = db.get(Question, question_id)
+    if not question or question.stage.event_id != event_id:
+        raise HTTPException(404, "Вопрос не найден")
+    answer_ids = list(db.scalars(select(Answer.id).where(Answer.question_id == question.id)))
+    db.execute(delete(Answer).where(Answer.question_id == question.id))
+    for key in [key for key in TEMPORARY_SENDERS if key[0] == question.id]:
+        TEMPORARY_SENDERS.pop(key, None)
+    audit(db, actor, "answer.reset_all", question, f"Удалено ответов: {len(answer_ids)}")
+    db.commit()
     return go(event_id, "answers")
 
 
