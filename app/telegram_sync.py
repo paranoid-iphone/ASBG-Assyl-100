@@ -51,12 +51,8 @@ async def notify_team_chats(
                     TeamQuestionPrompt.team_id == team.id,
                 ))
                 if mode == "ANSWER":
-                    if old_prompt:
-                        try:
-                            await bot.delete_message(old_prompt.telegram_chat_id, int(old_prompt.telegram_message_id))
-                        finally:
-                            db.delete(old_prompt)
-                            db.commit()
+                    # Keep the captain's final receipt in Telegram. It contains the
+                    # question title, respondent and the submitted team answer.
                     delivered += 1
                     mark_team_delivery(question.id, team.id, "closed")
                     continue

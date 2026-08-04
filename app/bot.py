@@ -6,7 +6,7 @@ from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, Message, ReplyKeyboardMarkup
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, Message, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from sqlalchemy import func, select
 
 from .config import get_settings
@@ -87,7 +87,7 @@ async def show_pending_status(message: Message, pending: dict):
         if pending["language"] == "KK" else
         f"{pending['name']}, регистрация завершена. После распределения в команду организатором бот откроет игровое меню.\nМероприятие: {pending['event_name']}"
     )
-    await message.answer(text)
+    await message.answer(text, reply_markup=ReplyKeyboardRemove())
 
 
 async def require_player(message: Message):
@@ -298,7 +298,10 @@ async def registration_name(message: Message, state: FSMContext):
 async def registration_name_retry(message: Message, state: FSMContext):
     data = await state.get_data()
     await state.set_state(InputState.registration_name)
-    await message.answer("Аты-жөніңізді қайта енгізіңіз." if data.get("language") == "KK" else "Введите имя и фамилию ещё раз.")
+    await message.answer(
+        "Аты-жөніңізді қайта енгізіңіз." if data.get("language") == "KK" else "Введите имя и фамилию ещё раз.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
 
 
 @router.message(InputState.registration_confirm, F.text.in_({"✅ Да, всё правильно", "✅ Иә, дұрыс"}))
@@ -642,21 +645,38 @@ async def submit_team_from_state(message: Message, state: FSMContext, telegram_u
             prompt_data = None if not prompt else (
                 prompt.telegram_chat_id, int(prompt.telegram_message_id)
             )
-        confirmation = f"✅ Ответ команды зафиксирован. Изменить его нельзя.\n\n{answer.text}"
-        if prompt_data:
-            try:
-                await message.bot.edit_message_text(
-                    confirmation, chat_id=prompt_data[0], message_id=prompt_data[1]
-                )
-                if str(message.chat.id) == str(prompt_data[0]) and message.message_id != prompt_data[1]:
-                    try:
-                        await message.delete()
-                    except Exception:
-                        pass
-            except Exception:
-                await message.answer(confirmation)
-        else:
+            question_title = answer.question.title
+            respondent = db.get(Player, answer.respondent_player_id) if answer.respondent_player_id else None
+            respondent_name = respondent.full_name if respondent else "не указан"
+            current_chat_id = str(message.chat.id)
+            current_message_id = int(message.message_id)
+            if prompt:
+                prompt.telegram_chat_id = current_chat_id
+                prompt.telegram_message_id = str(current_message_id)
+            else:
+                db.add(TeamQuestionPrompt(
+                    question_id=answer.question_id, team_id=answer.team_id,
+                    telegram_chat_id=current_chat_id, telegram_message_id=str(current_message_id),
+                ))
+            db.commit()
+        explanation_line = f"\nОбъяснение: {answer.explanation}" if answer.explanation else ""
+        confirmation = (
+            f"✅ Ваш ответ на вопрос «{question_title}» зафиксирован.\n\n"
+            f"Отвечающий: {respondent_name}\n"
+            f"Ответ: {answer.text}{explanation_line}\n\n"
+            "Изменить ответ нельзя."
+        )
+        try:
+            await message.edit_text(confirmation, reply_markup=None)
+        except Exception:
             await message.answer(confirmation)
+        if prompt_data and (
+            str(prompt_data[0]) != str(message.chat.id) or int(prompt_data[1]) != int(message.message_id)
+        ):
+            try:
+                await message.bot.delete_message(prompt_data[0], prompt_data[1])
+            except Exception:
+                pass
     except GameError as exc:
         await message.answer(str(exc))
     finally:

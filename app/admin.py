@@ -3,6 +3,7 @@ import json
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote
 from aiogram import Bot
 from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -50,8 +51,10 @@ def admin_auth(credentials: HTTPBasicCredentials = Depends(security)) -> str:
     return credentials.username
 
 
-def go(event_id: int | None = None, tab: str = "overview"):
+def go(event_id: int | None = None, tab: str = "overview", notice: str = ""):
     url = "/admin" if event_id is None else f"/admin/events/{event_id}?tab={tab}"
+    if event_id is not None and notice:
+        url += f"&notice={quote(notice)}"
     return RedirectResponse(url, 303)
 
 
@@ -96,9 +99,7 @@ async def require_captains_before_game(event: Event, db: Session, actor: str) ->
     problems: list[str] = []
     for team in missing:
         candidates = [p for p in team.players if p.active and p.telegram_user_id]
-        if not team.telegram_chat_id:
-            problems.append(f"{team.name}: не подключена Telegram-беседа")
-        elif len(candidates) < 2:
+        if len(candidates) < 2:
             problems.append(f"{team.name}: нужны минимум два зарегистрированных участника")
     if problems:
         raise HTTPException(409, "Сначала выберите капитанов. " + "; ".join(problems))
@@ -261,6 +262,7 @@ def event_dashboard(
         "tab": tab, "event": event, "teams": teams, "players": players,
         "pending_registrations": pending_registrations, "stages": stages, "programs": programs,
         "active_program": active_program,
+        "notice": request.query_params.get("notice", ""),
         "answers": answers, "answer_counts": answer_counts, "logs": logs, "active_question": active_question,
         "board": leaderboard(db, event.id), "roles": PlayerRole,
         "stage_types": StageType, "detective_statuses": DetectiveStatus,
@@ -1241,7 +1243,11 @@ async def launch_program(
                 started += 1
         audit(db, actor, "program.captain_preflight", program, f"teams={len(teams_needing_captain)}; started={started}")
         db.commit()
-        return go(event_id, "people")
+        team_names = ", ".join(team.name for team in teams_needing_captain)
+        return go(
+            event_id, "people",
+            f"Игра пока не запущена. Нет капитана: {team_names}. Голосование на 60 секунд отправлено участникам этих команд.",
+        )
     program_items: list[tuple[str, Question | Stage]] = []
     for link in program.stage_links:
         stage = link.stage
@@ -1716,8 +1722,13 @@ async def import_content(
 async def show_question(event_id: int, question_id: int, db: Session = Depends(get_db), actor=Depends(admin_auth)):
     event, question = require_event(db, event_id), db.get(Question, question_id)
     if not question or question.stage.event_id != event_id: raise HTTPException(404, "Вопрос не найден")
+    missing_captain_names = [team.name for team in teams_without_captain(event)]
     if not await require_captains_before_game(event, db, actor):
-        return go(event_id, "people")
+        return go(
+            event_id, "people",
+            "Вопрос пока не показан. Нет капитана: " + ", ".join(missing_captain_names)
+            + ". Участникам отправлено голосование на 60 секунд.",
+        )
     event.current_question_id, event.display_mode = question.id, "QUESTION"
     event.timer_started_at = None
     event.timer_duration_seconds = question.duration_seconds
@@ -1954,15 +1965,18 @@ async def start_captain_election(
         expires_at=datetime.utcnow() + timedelta(seconds=ELECTION_DURATION_SECONDS),
     )
     db.add(election); db.flush()
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=player.full_name, callback_data=f"captainvote:{election.id}:{player.id}")]
-        for player in candidates
-    ])
     bot = Bot(get_settings().telegram_bot_token)
     delivered = 0
     failed = 0
     try:
         for player in candidates:
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text=candidate.full_name,
+                    callback_data=f"captainvote:{election.id}:{candidate.id}",
+                )]
+                for candidate in candidates if candidate.id != player.id
+            ])
             text = (
                 "Команда капитанын таңдаңыз. Өзіңізге дауыс беруге болмайды — басқа қатысушыны таңдаңыз.\n\n"
                 if player.preferred_language == "KK" else
