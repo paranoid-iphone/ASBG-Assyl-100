@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     admin_password: str = "change-me"
     secret_key: str = "replace-this-in-production"
     web_base_url: str = "http://127.0.0.1:8000"
+    ngrok_api_url: str = "http://127.0.0.1:4040/api/tunnels"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

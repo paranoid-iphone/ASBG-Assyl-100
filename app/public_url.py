@@ -19,7 +19,7 @@ def discover_ngrok_url() -> str | None:
     """Return the active HTTPS ngrok tunnel for the local web application."""
     try:
         response = httpx.get(
-            "http://127.0.0.1:4040/api/tunnels",
+            get_settings().ngrok_api_url,
             timeout=0.35,
             trust_env=False,
         )
@@ -49,4 +49,3 @@ def public_base_url(request_base_url: str) -> tuple[str, str]:
     if ngrok:
         return ngrok, "ngrok"
     return request_base_url.rstrip("/"), "local"
-
