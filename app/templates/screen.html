@@ -18,7 +18,7 @@ body{margin:0;background:#0c1220;color:#f8fafc;font-family:Inter,system-ui;overf
 .answer-wall{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.2vw;width:min(1200px,90vw);max-height:72vh;overflow:hidden}.answer-card{background:#ffffff12;border:1px solid #ffffff24;border-radius:16px;padding:1.2vw 1.5vw;font-size:1.65vw;text-align:left}.answer-card small{display:block;color:#aeb8ca;margin-top:.5vw}
 .options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.7vw 2vw;max-width:82vw;margin:1.2vw auto 0;text-align:left;font-size:1.55vw;color:#dbe4f7}.option{padding:.55vw 1vw;border-left:3px solid #91a7ff;background:#ffffff0a;border-radius:4px}
 .hint{position:fixed;right:20px;bottom:16px;color:#ffffff88;font-size:13px}.volume{position:fixed;left:20px;bottom:14px;display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;background:#08101dcc;color:#d7deeb;font-size:13px;z-index:5}.volume input{width:150px;accent-color:#91a7ff}.volume output{min-width:38px;text-align:right;font-variant-numeric:tabular-nums}.busy{pointer-events:none}
-.timer-tools{position:fixed;right:20px;top:18px;display:none;gap:8px;z-index:6}.timer-tools.visible{display:flex}.timer-tools button,.music-toggle{border:1px solid #ffffff30;background:#08101ddd;color:#fff;border-radius:9px;padding:9px 12px;font-weight:750;cursor:pointer}.music-toggle{position:fixed;left:20px;top:18px;z-index:6}.music-toggle.active{background:#2945aa}
+.timer-tools{position:fixed;right:20px;top:18px;display:none;gap:8px;z-index:6}.timer-tools.visible{display:flex}.timer-tools button,.music-toggle,.home-button{border:1px solid #ffffff30;background:#08101ddd;color:#fff;border-radius:9px;padding:9px 12px;font-weight:750;cursor:pointer}.music-toggle{position:fixed;left:20px;top:18px;z-index:6}.music-toggle.active{background:#2945aa}.home-button{position:fixed;left:20px;top:66px;z-index:6}
 .slide-nav{position:fixed;inset:50% 18px auto;display:flex;justify-content:space-between;transform:translateY(-50%);pointer-events:none;z-index:7}.slide-nav button{pointer-events:auto;width:54px;height:70px;border:1px solid #ffffff2b;border-radius:14px;background:#07101ac7;color:#fff;font-size:30px;cursor:pointer;opacity:.55}.slide-nav button:hover,.slide-nav button:focus-visible{opacity:1;background:#2945aa;outline:none}.slide-nav button:disabled{opacity:.18;cursor:wait}
 @media(max-aspect-ratio:1/1){.question{font-size:6vw}.event{font-size:10vw}.description{font-size:4vw}.timer{font-size:22vw}.answer{font-size:8vw}}
 </style>
@@ -27,15 +27,17 @@ body{margin:0;background:#0c1220;color:#f8fafc;font-family:Inter,system-ui;overf
 <div id="app" class="screen"><div class="center"><div class="event">Подключение…</div></div></div>
 <label id="volumeControl" class="volume">🔊 <input id="volume" type="range" min="0" max="100" step="1" value="55" aria-label="Громкость"><output id="volumeValue">55%</output></label>
 <button id="musicToggle" class="music-toggle">♫ Фоновая музыка</button>
+<button id="homeButton" class="home-button" title="Показать приветствие, не сбрасывая игру">⌂ Приветствие</button>
 <div id="timerTools" class="timer-tools"><button id="timerPlay">▶ Старт</button><button id="timerPause">⏸ Пауза</button><button id="timerReset">↺ Сброс</button><button data-adjust="-10">−10 сек.</button><button data-adjust="10">+10 сек.</button><button data-adjust="30">+30 сек.</button></div>
 <div class="slide-nav"><button id="previousSlide" aria-label="Предыдущий слайд">←</button><button id="nextSlide" aria-label="Следующий слайд">→</button></div>
-<div class="hint">← → — навигация · ЛКМ — продолжить · ПКМ — назад · F11 — полный экран</div>
+<div class="hint">← → — навигация · Home — приветствие · ЛКМ — продолжить · ПКМ — назад · F11 — полный экран</div>
 <script>
 const app=document.getElementById('app');
 const volumeControl=document.getElementById('volumeControl');
 const volumeInput=document.getElementById('volume');
 const volumeValue=document.getElementById('volumeValue');
 const timerTools=document.getElementById('timerTools'),musicToggle=document.getElementById('musicToggle');
+const homeButton=document.getElementById('homeButton');
 const timerPlay=document.getElementById('timerPlay'),timerPause=document.getElementById('timerPause'),timerReset=document.getElementById('timerReset');
 const previousSlide=document.getElementById('previousSlide'),nextSlide=document.getElementById('nextSlide');
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -109,6 +111,7 @@ function ensureAudio(){if(!audioContext)audioContext=new (window.AudioContext||w
 function musicPulse(){if(!audioContext)return;const chords=[[130.81,196,261.63],[146.83,220,293.66],[123.47,185,246.94],[110,164.81,220]];const now=audioContext.currentTime;chords[musicStep++%chords.length].forEach((frequency,index)=>{const oscillator=audioContext.createOscillator(),gain=audioContext.createGain();oscillator.type=index?'sine':'triangle';oscillator.frequency.value=frequency;gain.gain.setValueAtTime(.0001,now);gain.gain.exponentialRampToValueAtTime(Math.max(.0001,volumeGain()*.045/(index+1)),now+.15);gain.gain.exponentialRampToValueAtTime(.0001,now+1.8);oscillator.connect(gain).connect(audioContext.destination);oscillator.start(now);oscillator.stop(now+1.9)})}
 function toggleMusic(){ensureAudio();if(musicTimer){clearInterval(musicTimer);musicTimer=null;musicToggle.classList.remove('active');musicToggle.textContent='♫ Фоновая музыка'}else{musicPulse();musicTimer=setInterval(musicPulse,1800);musicToggle.classList.add('active');musicToggle.textContent='■ Остановить музыку'}}
 musicToggle.addEventListener('click',event=>{event.stopPropagation();toggleMusic()});
+homeButton.addEventListener('click',async event=>{event.stopPropagation();await showHome()});
 timerTools.addEventListener('click',async event=>{event.stopPropagation();const seconds=event.target.dataset.adjust;if(!seconds)return;const response=await fetch(`/api/screen/{{ token }}/timer-adjust?seconds=${seconds}`,{method:'POST'});if(!response.ok){const error=await response.json();alert(error.detail||'Не удалось изменить таймер')}await sync()});
 async function timerCommand(command){
   if(busy)return;busy=true;
@@ -187,6 +190,11 @@ async function previousSlideAction(){
   try{const response=await fetch('/api/screen/{{ token }}/back',{method:'POST'});if(!response.ok){const error=await response.json().catch(()=>({detail:'Предыдущего слайда нет'}));alert(error.detail)}await sync()}
   finally{busy=false;previousSlide.disabled=nextSlide.disabled=false}
 }
+async function showHome(){
+  if(busy)return;busy=true;previousSlide.disabled=nextSlide.disabled=true;
+  try{const response=await fetch('/api/screen/{{ token }}/home',{method:'POST'});if(!response.ok){const error=await response.json().catch(()=>({detail:'Не удалось показать приветствие'}));alert(error.detail)}await sync()}
+  finally{busy=false;previousSlide.disabled=nextSlide.disabled=false}
+}
 app.addEventListener('click',advanceSlide);
 app.addEventListener('contextmenu',async event=>{event.preventDefault();await previousSlideAction()});
 previousSlide.addEventListener('click',async event=>{event.stopPropagation();await previousSlideAction()});
@@ -196,6 +204,7 @@ document.addEventListener('keydown',async event=>{
   if(event.repeat||['INPUT','TEXTAREA','SELECT'].includes(target?.tagName)||target?.isContentEditable)return;
   if(event.key==='ArrowRight'){event.preventDefault();await advanceSlide()}
   if(event.key==='ArrowLeft'){event.preventDefault();await previousSlideAction()}
+  if(event.key==='Home'){event.preventDefault();await showHome()}
 });
 
 sync();setInterval(sync,500);

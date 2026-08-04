@@ -375,6 +375,23 @@ def previous_screen(token: str, db: Session = Depends(get_db)):
     return {"action": "back", "mode": event.display_mode}
 
 
+@router.post("/api/screen/{token}/home")
+def show_welcome_screen(token: str, db: Session = Depends(get_db)):
+    """Show a safe welcome overlay without changing the current game item."""
+    event = event_by_token(db, token)
+    push_screen_history(event)
+    CUSTOM_SLIDES[event.id] = {
+        "title": event.name,
+        "text": "Добро пожаловать на интеллектуальную игру!",
+        "title_kk": event.name,
+        "text_kk": "Зияткерлік ойынға қош келдіңіздер!",
+    }
+    event.display_mode = "SLIDE"
+    event.timer_started_at = None
+    db.commit()
+    return {"action": "home"}
+
+
 @router.post("/api/screen/{token}/timer-adjust")
 def adjust_screen_timer(token: str, seconds: int, db: Session = Depends(get_db)):
     event = event_by_token(db, token)
