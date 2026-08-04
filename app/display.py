@@ -370,7 +370,34 @@ def previous_screen(token: str, db: Session = Depends(get_db)):
     event = event_by_token(db, token)
     history = SCREEN_HISTORY.get(event.id, [])
     if not history:
-        raise HTTPException(409, "Предыдущего слайда нет")
+        items = ordered_program_items(db, event.id)
+        current_index = next((
+            index for index, (kind, content) in enumerate(items)
+            if kind == "question" and content.id == event.current_question_id
+        ), -1)
+        previous_question = next((
+            content for kind, content in reversed(items[:current_index]) if kind == "question"
+        ), None) if current_index > 0 else None
+        if not previous_question:
+            raise HTTPException(409, "Предыдущего вопроса в программе нет")
+        push_screen_history(event)
+        CUSTOM_SLIDES[event.id] = {
+            "title": f"{previous_question.stage.title} · {previous_question.title}",
+            "text": previous_question.text,
+            "title_kk": (
+                f"{previous_question.stage.title_kk or previous_question.stage.title} · "
+                f"{previous_question.title_kk or previous_question.title}"
+            ),
+            "text_kk": previous_question.text_kk or previous_question.text,
+        }
+        event.display_mode = "SLIDE"
+        event.timer_started_at = None
+        db.commit()
+        return {
+            "action": "previous_question_preview",
+            "question_id": previous_question.id,
+            "view_only": True,
+        }
     restore_screen_snapshot(db, event, history.pop())
     return {"action": "back", "mode": event.display_mode}
 

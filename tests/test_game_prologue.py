@@ -3,9 +3,12 @@ from fastapi.testclient import TestClient
 from app.database import Base, SessionLocal, engine
 from app.main import app
 from app.models import Event, GameProgram, GameProgramStage, Question, Stage
+from app.runtime_state import CUSTOM_SLIDES, SCREEN_HISTORY
 
 
 def setup_function():
+    SCREEN_HISTORY.clear()
+    CUSTOM_SLIDES.clear()
     Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)
 
@@ -61,3 +64,29 @@ def test_reserve_stage_requires_an_explicit_decision():
         assert response.json()["action"] == "reserve_ready"
         assert client.get(f"/api/screen/{token}").json()["mode"] == "RESERVE_READY"
         assert client.post(f"/api/screen/{token}/advance").json()["question_id"] == reserve_question_id
+
+
+def test_back_falls_back_to_previous_program_question_when_history_is_empty():
+    with SessionLocal() as db:
+        event = Event(name="Back", display_mode="QUESTION")
+        db.add(event); db.flush()
+        stage = Stage(event_id=event.id, title="Round", position=1)
+        db.add(stage); db.flush()
+        first = Question(stage_id=stage.id, title="Q1", text="First", correct_answer="A", position=1)
+        second = Question(stage_id=stage.id, title="Q2", text="Second", correct_answer="B", position=2)
+        program = GameProgram(event_id=event.id, title="Main", status="RUNNING")
+        db.add_all([first, second, program]); db.flush()
+        db.add(GameProgramStage(program_id=program.id, stage_id=stage.id, position=1))
+        event.current_question_id = second.id
+        db.commit()
+        token = event.display_token
+
+    with TestClient(app) as client:
+        response = client.post(f"/api/screen/{token}/back")
+        assert response.status_code == 200
+        assert response.json()["action"] == "previous_question_preview"
+        state = client.get(f"/api/screen/{token}").json()
+        assert state["mode"] == "SLIDE"
+        assert state["slide"]["text"] == "First"
+        assert client.post(f"/api/screen/{token}/advance").json()["action"] == "resume"
+        assert client.get(f"/api/screen/{token}").json()["question"]["ru"]["text"] == "Second"
