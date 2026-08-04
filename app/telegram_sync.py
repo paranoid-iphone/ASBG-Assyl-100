@@ -4,14 +4,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .config import get_settings
-from .models import Event, Player, Question, Team, TeamQuestionPrompt
+from .models import Event, Player, PlayerRole, Question, Team, TeamQuestionPrompt
 from .runtime_state import mark_team_delivery
 
 
 async def notify_team_chats(
     db: Session, event: Event, question: Question, mode: str, team_id: int | None = None
 ) -> tuple[int, int]:
-    """Mirror important big-screen transitions into linked team chats."""
+    """Keep one private answer prompt for each team's captain."""
     token = get_settings().telegram_bot_token
     if not token:
         return 0, 0
@@ -19,7 +19,6 @@ async def notify_team_chats(
         select(Team).where(
             Team.event_id == event.id,
             Team.active.is_(True),
-            Team.telegram_chat_id.is_not(None),
             *((Team.id == team_id,) if team_id is not None else ()),
         )
     ).all()
@@ -37,6 +36,16 @@ async def notify_team_chats(
     try:
         for team in teams:
             try:
+                captain = db.scalar(select(Player).where(
+                    Player.team_id == team.id,
+                    Player.active.is_(True),
+                    Player.role == PlayerRole.CAPTAIN,
+                    Player.telegram_user_id.is_not(None),
+                ))
+                if not captain:
+                    failed += 1
+                    mark_team_delivery(question.id, team.id, "failed", "captain is not connected")
+                    continue
                 old_prompt = db.scalar(select(TeamQuestionPrompt).where(
                     TeamQuestionPrompt.question_id == question.id,
                     TeamQuestionPrompt.team_id == team.id,
@@ -64,6 +73,9 @@ async def notify_team_chats(
                     for player in teammates
                 ])
                 text = (
+                    f"⏱ Жауап қабылдау ашылды. {question.submission_seconds} секунд қалды.\n\n"
+                    "Капитан, команда атынан жауап беретін қатысушыны таңдаңыз:"
+                    if captain.preferred_language == "KK" else
                     f"⏱ Открыт приём ответа. Осталось {question.submission_seconds} секунд.\n\n"
                     "Капитан, выберите участника, который будет отвечать от команды:"
                 )
@@ -72,11 +84,11 @@ async def notify_team_chats(
                         text, old_prompt.telegram_chat_id, int(old_prompt.telegram_message_id), reply_markup=keyboard
                     )
                 else:
-                    sent = await bot.send_message(team.telegram_chat_id, text, reply_markup=keyboard)
+                    sent = await bot.send_message(captain.telegram_user_id, text, reply_markup=keyboard)
                     db.add(TeamQuestionPrompt(
                         question_id=question.id,
                         team_id=team.id,
-                        telegram_chat_id=str(team.telegram_chat_id),
+                        telegram_chat_id=str(captain.telegram_user_id),
                         telegram_message_id=str(sent.message_id),
                     ))
                     db.commit()

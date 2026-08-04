@@ -37,7 +37,11 @@ def screen_state(token: str, db: Session = Depends(get_db)):
     SCREEN_HEARTBEATS[event.id] = datetime.utcnow()
     question = db.get(Question, event.current_question_id) if event.current_question_id else None
     elapsed = (datetime.utcnow() - event.timer_started_at).total_seconds() if event.timer_started_at else None
-    remaining = max(0, event.timer_duration_seconds - int(elapsed)) if elapsed is not None else None
+    remaining = max(0, event.timer_duration_seconds - int(elapsed)) if elapsed is not None else (
+        event.timer_duration_seconds
+        if event.display_mode in {"TIMER_READY", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION_PAUSED"}
+        else None
+    )
     board = leaderboard(db, event.id)
     anonymous_answers = []
     if question and event.display_mode == "TEAM_ANSWERS":
@@ -74,7 +78,13 @@ def screen_state(token: str, db: Session = Depends(get_db)):
                 "explanation": question.explanation_kk,
             },
         },
-        "timer": {"running": elapsed is not None and remaining > 0, "remaining": remaining},
+        "timer": {
+            "running": elapsed is not None and remaining > 0,
+            "paused": event.display_mode in {"TIMER_PAUSED", "SUBMISSION_PAUSED"},
+            "ready": event.display_mode in {"TIMER_READY", "SUBMISSION_READY"},
+            "phase": "submission" if event.display_mode.startswith("SUBMISSION") else "discussion",
+            "remaining": remaining,
+        },
         "timer_sound_enabled": event.timer_sound_enabled,
         "anonymous_answers": anonymous_answers,
         "detective": None if not detective_stage else {
@@ -244,21 +254,29 @@ async def advance_screen(token: str, db: Session = Depends(get_db)):
     if event.display_mode == "QUESTION":
         push_screen_history(event)
         event.timer_duration_seconds = current.duration_seconds
-        event.timer_started_at = datetime.utcnow()
-        event.display_mode = "TIMER"
+        event.timer_started_at = None
+        event.display_mode = "TIMER_READY"
         db.commit()
-        return {"action": "discussion", "question_id": current.id}
+        return {"action": "discussion_ready", "question_id": current.id}
 
     if event.display_mode == "TIMER":
+        elapsed = (datetime.utcnow() - event.timer_started_at).total_seconds() if event.timer_started_at else 0
+        if elapsed < event.timer_duration_seconds:
+            raise HTTPException(409, "Сначала завершите таймер обсуждения")
         push_screen_history(event)
         event.timer_duration_seconds = current.submission_seconds
-        event.timer_started_at = datetime.utcnow()
-        event.display_mode = "SUBMISSION"
+        event.timer_started_at = None
+        event.display_mode = "SUBMISSION_READY"
         db.commit()
-        await notify_team_chats(db, event, current, "SUBMISSION")
-        return {"action": "submission", "question_id": current.id}
+        return {"action": "submission_ready", "question_id": current.id}
+
+    if event.display_mode in {"TIMER_READY", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION_PAUSED"}:
+        raise HTTPException(409, "Сначала запустите или завершите текущий таймер")
 
     if event.display_mode == "SUBMISSION":
+        elapsed = (datetime.utcnow() - event.timer_started_at).total_seconds() if event.timer_started_at else 0
+        if elapsed < event.timer_duration_seconds:
+            raise HTTPException(409, "Сначала завершите таймер приёма ответов")
         push_screen_history(event)
         event.display_mode = "ANSWER"
         event.timer_started_at = None
@@ -296,11 +314,64 @@ def previous_screen(token: str, db: Session = Depends(get_db)):
 @router.post("/api/screen/{token}/timer-adjust")
 def adjust_screen_timer(token: str, seconds: int, db: Session = Depends(get_db)):
     event = event_by_token(db, token)
-    if not event.timer_started_at:
-        raise HTTPException(409, "Таймер не запущен")
+    if event.display_mode not in {"TIMER_READY", "TIMER", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION", "SUBMISSION_PAUSED", "DETECTIVE"}:
+        raise HTTPException(409, "На текущем слайде нет таймера")
     event.timer_duration_seconds = max(0, min(7200, event.timer_duration_seconds + max(-300, min(seconds, 1800))))
     db.commit()
     return {"action": "timer_adjust", "seconds": seconds}
+
+
+@router.post("/api/screen/{token}/timer/start")
+async def start_screen_timer(token: str, db: Session = Depends(get_db)):
+    event = event_by_token(db, token)
+    question = db.get(Question, event.current_question_id) if event.current_question_id else None
+    transitions = {
+        "TIMER_READY": "TIMER",
+        "TIMER_PAUSED": "TIMER",
+        "SUBMISSION_READY": "SUBMISSION",
+        "SUBMISSION_PAUSED": "SUBMISSION",
+    }
+    next_mode = transitions.get(event.display_mode)
+    if not next_mode:
+        raise HTTPException(409, "Таймер уже запущен или недоступен")
+    event.display_mode = next_mode
+    event.timer_started_at = datetime.utcnow()
+    db.commit()
+    if next_mode == "SUBMISSION" and question:
+        await notify_team_chats(db, event, question, "SUBMISSION")
+    return {"action": "timer_start", "mode": next_mode}
+
+
+@router.post("/api/screen/{token}/timer/pause")
+def pause_screen_timer(token: str, db: Session = Depends(get_db)):
+    event = event_by_token(db, token)
+    if event.display_mode not in {"TIMER", "SUBMISSION"} or not event.timer_started_at:
+        raise HTTPException(409, "Запущенного таймера нет")
+    elapsed = int((datetime.utcnow() - event.timer_started_at).total_seconds())
+    event.timer_duration_seconds = max(0, event.timer_duration_seconds - elapsed)
+    event.timer_started_at = None
+    event.display_mode = "TIMER_PAUSED" if event.display_mode == "TIMER" else "SUBMISSION_PAUSED"
+    db.commit()
+    return {"action": "timer_pause", "remaining": event.timer_duration_seconds}
+
+
+@router.post("/api/screen/{token}/timer/reset")
+def reset_screen_timer(token: str, db: Session = Depends(get_db)):
+    event = event_by_token(db, token)
+    question = db.get(Question, event.current_question_id) if event.current_question_id else None
+    if not question:
+        raise HTTPException(409, "Активного вопроса нет")
+    if event.display_mode.startswith("TIMER"):
+        event.display_mode = "TIMER_READY"
+        event.timer_duration_seconds = question.duration_seconds
+    elif event.display_mode.startswith("SUBMISSION"):
+        event.display_mode = "SUBMISSION_READY"
+        event.timer_duration_seconds = question.submission_seconds
+    else:
+        raise HTTPException(409, "На текущем слайде нет таймера")
+    event.timer_started_at = None
+    db.commit()
+    return {"action": "timer_reset", "remaining": event.timer_duration_seconds}
 
 
 @router.post("/api/screen/{token}/next")

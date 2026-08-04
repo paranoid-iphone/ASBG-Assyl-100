@@ -316,7 +316,11 @@ def live_control_state(
         })
 
     elapsed = (datetime.utcnow() - event.timer_started_at).total_seconds() if event.timer_started_at else None
-    remaining = max(0, event.timer_duration_seconds - int(elapsed)) if elapsed is not None else None
+    remaining = max(0, event.timer_duration_seconds - int(elapsed)) if elapsed is not None else (
+        event.timer_duration_seconds
+        if event.display_mode in {"TIMER_READY", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION_PAUSED"}
+        else None
+    )
     question = db.get(Question, event.current_question_id) if event.current_question_id else None
     team_answers = {}
     if question:
@@ -376,7 +380,7 @@ def live_control_state(
             "detective_correct": submission.is_correct if submission else None,
             "detective_points": submission.points_awarded if submission else None,
             "delivery": {
-                "status": "disconnected" if not team.telegram_chat_id else delivery.get("status", "unknown"),
+                "status": "disconnected" if not captain or not captain.telegram_user_id else delivery.get("status", "unknown"),
                 "error": delivery.get("error", ""),
             },
             "clues": clue_rows,
@@ -384,9 +388,13 @@ def live_control_state(
         })
 
     next_labels = {
-        "QUESTION": "Запустить таймер обсуждения",
-        "TIMER": "Открыть приём ответов",
+        "QUESTION": "Перейти к таймеру обсуждения",
+        "TIMER_READY": "Сначала запустите таймер",
+        "TIMER": "Перейти к таймеру ответов",
+        "TIMER_PAUSED": "Продолжите или сбросьте таймер",
+        "SUBMISSION_READY": "Сначала откройте приём ответов",
         "SUBMISSION": "Закрыть ответы и показать правильный ответ",
+        "SUBMISSION_PAUSED": "Продолжите или сбросьте приём ответов",
         "ANSWER": "Показать ответы команд" if question and question.show_anonymous_answers else "Перейти дальше",
         "TEAM_ANSWERS": "Следующий вопрос или этап",
         "DETECTIVE": "Завершить детектив и перейти дальше",
@@ -402,8 +410,10 @@ def live_control_state(
         "program": None if not program else {"id": program.id, "title": program.title},
         "mode": event.display_mode,
         "mode_label": {
-            "WELCOME": "Заставка", "QUESTION": "Вопрос показан", "TIMER": "Обсуждение",
-            "SUBMISSION": "Приём ответов", "ANSWER": "Правильный ответ",
+            "WELCOME": "Заставка", "QUESTION": "Вопрос показан",
+            "TIMER_READY": "Таймер обсуждения готов", "TIMER": "Обсуждение", "TIMER_PAUSED": "Обсуждение на паузе",
+            "SUBMISSION_READY": "Таймер ответа готов", "SUBMISSION": "Приём ответов", "SUBMISSION_PAUSED": "Приём ответов на паузе",
+            "ANSWER": "Правильный ответ",
             "TEAM_ANSWERS": "Ответы команд", "DETECTIVE": "Детективная игра",
             "PAUSED": "Пауза",
             "SLIDE": "Служебный слайд",
@@ -416,12 +426,19 @@ def live_control_state(
             "id": detective_stage.id, "title": detective_stage.title,
             "answered": detective_answered, "total": detective_total,
         },
-        "timer": {"remaining": remaining, "running": remaining is not None and remaining > 0},
+        "timer": {
+            "remaining": remaining,
+            "running": event.timer_started_at is not None and remaining is not None and remaining > 0,
+            "ready": event.display_mode in {"TIMER_READY", "SUBMISSION_READY"},
+            "paused": event.display_mode in {"TIMER_PAUSED", "SUBMISSION_PAUSED"},
+        },
         "timeline": timeline,
         "current_index": current_index,
         "teams": teams,
         "next_label": next_labels.get(event.display_mode, "Продолжить"),
-        "can_advance": bool(program or question) and detective_can_finish,
+        "can_advance": bool(program or question) and detective_can_finish and event.display_mode not in {
+            "TIMER_READY", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION_PAUSED"
+        },
         "screen": {
             "status": "offline" if heartbeat_age is None or heartbeat_age > 30 else ("stale" if heartbeat_age > 10 else "online"),
             "age": heartbeat_age,

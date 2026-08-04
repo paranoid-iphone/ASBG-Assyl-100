@@ -42,8 +42,12 @@ def test_click_flow_question_timer_answer_next():
         token = event.display_token
     with TestClient(app) as client:
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "question"
-        assert client.post(f"/api/screen/{token}/advance").json()["action"] == "discussion"
-        assert client.post(f"/api/screen/{token}/advance").json()["action"] == "submission"
+        assert client.post(f"/api/screen/{token}/advance").json()["action"] == "discussion_ready"
+        assert client.post(f"/api/screen/{token}/timer/start").json()["mode"] == "TIMER"
+        assert client.post(f"/api/screen/{token}/timer-adjust?seconds=-300").status_code == 200
+        assert client.post(f"/api/screen/{token}/advance").json()["action"] == "submission_ready"
+        assert client.post(f"/api/screen/{token}/timer/start").json()["mode"] == "SUBMISSION"
+        assert client.post(f"/api/screen/{token}/timer-adjust?seconds=-300").status_code == 200
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "answer"
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "team_answers"
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "question"
