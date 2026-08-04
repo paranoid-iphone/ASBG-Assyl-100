@@ -54,7 +54,17 @@ function render(d){
     const extra=type==='answer'?data.explanation:'';
     return `<div class="language-block"><div class="lang">${lang}</div><div class="${type}">${esc(main||'')}</div>${extra?`<div class="explanation">${esc(extra)}</div>`:''}</div>`;
   };
-  if(d.mode==='WELCOME'){
+  if(d.mode==='INTRO'){
+    html=`<div class="eyebrow">Интеллектуальная игра / Зияткерлік ойын</div><div class="center"><div class="event">${esc(d.event)}</div><div class="description">Добро пожаловать! · Қош келдіңіздер!</div></div>`;
+  }else if(d.mode==='CAPTAIN_ELECTION_READY'||d.mode==='CAPTAIN_ELECTION_RUNNING'){
+    const election=d.captain_election||{},time=d.timer.remaining===null?'01:00':`${String(Math.floor(d.timer.remaining/60)).padStart(2,'0')}:${String(d.timer.remaining%60).padStart(2,'0')}`;
+    const ready=d.mode==='CAPTAIN_ELECTION_READY';
+    html=`<div class="eyebrow">Выбор капитанов / Капитандарды таңдау</div><div class="center"><div class="event" style="font-size:4vw">Зайдите в Telegram-бот</div><div class="description">Выберите капитана своей команды · Команда капитанын таңдаңыз</div><div class="timer ${d.timer.remaining<=10?'danger':''}" style="font-size:8vw;margin-top:.2em">${time}</div><div class="description">Капитаны выбраны: ${election.selected||0} из ${election.total||0}${ready?'<br>Нажмите «Старт», чтобы разослать голосование':''}</div></div>`;
+  }else if(d.mode==='CAPTAIN_ELECTION_COMPLETE'){
+    html=`<div class="eyebrow">Выбор капитанов завершён</div><div class="center"><div class="event" style="font-size:4.5vw">Капитаны выбраны!</div><div class="description">Результат отправлен каждому участнику · Нәтиже әр қатысушыға жіберілді</div></div>`;
+  }else if(d.mode==='RULES'){
+    html=`<div class="eyebrow">Правила / Ережелер</div><div class="center"><div class="event" style="font-size:4vw">Играйте всей командой</div><div class="description">Слушайте вопрос внимательно. Обсудите одну общую версию. Капитан выбирает отвечающего и подтверждает окончательный ответ в Telegram-боте.<br><br>Сұрақты мұқият тыңдаңыздар. Бір ортақ нұсқаны талқылаңыздар. Капитан жауап берушіні таңдап, соңғы жауапты Telegram-ботта растайды.</div></div>`;
+  }else if(d.mode==='WELCOME'){
     html=`<div class="eyebrow">Интеллектуальная игра</div><div class="center"><div class="event">${esc(d.event)}</div><div class="description">${esc(d.description)}</div></div>`;
   }else if(d.mode==='SLIDE'){
     const slide=d.slide||{};const title=d.display_language==='KK'&&slide.title_kk?slide.title_kk:slide.title;const text=d.display_language==='KK'&&slide.text_kk?slide.text_kk:slide.text;
@@ -86,9 +96,10 @@ function render(d){
     html=`<div class="center"><div class="event">${esc(d.event)}</div></div>`;
   }
   app.innerHTML=html;
-  timerTools.classList.toggle('visible',d.mode.startsWith('TIMER')||d.mode.startsWith('SUBMISSION')||d.mode==='DETECTIVE');
-  timerPlay.hidden=!(d.timer.ready||d.timer.paused);
-  timerPause.hidden=!d.timer.running;
+  const captainTimer=d.mode==='CAPTAIN_ELECTION_READY'||d.mode==='CAPTAIN_ELECTION_RUNNING';
+  timerTools.classList.toggle('visible',d.mode.startsWith('TIMER')||d.mode.startsWith('SUBMISSION')||d.mode==='DETECTIVE'||captainTimer);
+  timerPlay.hidden=!(d.timer.ready||d.timer.paused||d.mode==='CAPTAIN_ELECTION_READY');
+  timerPause.hidden=!d.timer.running||captainTimer;
   timerReset.hidden=!(d.mode.startsWith('TIMER')||d.mode.startsWith('SUBMISSION'));
 }
 

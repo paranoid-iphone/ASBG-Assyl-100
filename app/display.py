@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 
+from aiogram import Bot
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -9,7 +10,9 @@ from sqlalchemy.orm import Session
 
 from .database import get_db
 from .detective_runtime import finish_detective_stage, start_detective_stage
-from .models import Answer, AnswerScope, DetectiveSubmission, Event, GameProgram, GameProgramStage, PlayerRole, Question, QuestionStatus, Stage, StageType
+from .models import Answer, AnswerScope, CaptainElection, DetectiveSubmission, Event, GameProgram, GameProgramStage, PlayerRole, Question, QuestionStatus, Stage, StageType
+from .config import get_settings
+from .captain_elections import ELECTION_DURATION_SECONDS, start_captain_election_for_team
 from .services import leaderboard, set_question_status
 from .telegram_sync import notify_team_chats
 from .runtime_state import CUSTOM_SLIDES, SCREEN_HEARTBEATS, SCREEN_HISTORY
@@ -39,9 +42,11 @@ def screen_state(token: str, db: Session = Depends(get_db)):
     elapsed = (datetime.utcnow() - event.timer_started_at).total_seconds() if event.timer_started_at else None
     remaining = max(0, event.timer_duration_seconds - int(elapsed)) if elapsed is not None else (
         event.timer_duration_seconds
-        if event.display_mode in {"TIMER_READY", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION_PAUSED"}
+        if event.display_mode in {"TIMER_READY", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION_PAUSED", "CAPTAIN_ELECTION_READY"}
         else None
     )
+    active_teams = [team for team in event.teams if team.active]
+    captain_teams = len(active_teams) - len(teams_without_captain(event))
     board = leaderboard(db, event.id)
     anonymous_answers = []
     if question and event.display_mode == "TEAM_ANSWERS":
@@ -84,6 +89,11 @@ def screen_state(token: str, db: Session = Depends(get_db)):
             "ready": event.display_mode in {"TIMER_READY", "SUBMISSION_READY"},
             "phase": "submission" if event.display_mode.startswith("SUBMISSION") else "discussion",
             "remaining": remaining,
+        },
+        "captain_election": {
+            "selected": captain_teams,
+            "total": len(active_teams),
+            "missing": teams_without_captain(event),
         },
         "timer_sound_enabled": event.timer_sound_enabled,
         "anonymous_answers": anonymous_answers,
@@ -221,6 +231,33 @@ async def advance_screen(token: str, db: Session = Depends(get_db)):
         if history:
             restore_screen_snapshot(db, event, history.pop())
         return {"action": "resume"}
+    if event.display_mode == "INTRO":
+        push_screen_history(event)
+        event.display_mode = "CAPTAIN_ELECTION_READY"
+        event.timer_duration_seconds = ELECTION_DURATION_SECONDS
+        event.timer_started_at = None
+        db.commit()
+        return {"action": "captain_election_ready"}
+    if event.display_mode in {"CAPTAIN_ELECTION_READY", "CAPTAIN_ELECTION_RUNNING"}:
+        missing = teams_without_captain(event)
+        if missing:
+            raise HTTPException(409, "Сначала завершите выбор капитанов: " + ", ".join(missing))
+        push_screen_history(event)
+        event.display_mode = "CAPTAIN_ELECTION_COMPLETE"
+        event.timer_started_at = None
+        db.commit()
+        return {"action": "captain_election_complete"}
+    if event.display_mode == "CAPTAIN_ELECTION_COMPLETE":
+        push_screen_history(event)
+        event.display_mode = "RULES"
+        db.commit()
+        return {"action": "rules"}
+    if event.display_mode == "RULES":
+        items = ordered_program_items(db, event.id)
+        if not items:
+            raise HTTPException(409, "В игре нет вопросов или детективного этапа")
+        push_screen_history(event)
+        return await activate_program_item(db, event, items[0])
     if event.display_mode == "DETECTIVE":
         stage = db.get(Stage, event.current_detective_stage_id) if event.current_detective_stage_id else None
         if not stage:
@@ -324,6 +361,34 @@ def adjust_screen_timer(token: str, seconds: int, db: Session = Depends(get_db))
 @router.post("/api/screen/{token}/timer/start")
 async def start_screen_timer(token: str, db: Session = Depends(get_db)):
     event = event_by_token(db, token)
+    if event.display_mode == "CAPTAIN_ELECTION_READY":
+        missing_teams = [team for team in event.teams if team.active and team.name in teams_without_captain(event)]
+        if not missing_teams:
+            event.display_mode = "CAPTAIN_ELECTION_COMPLETE"
+            event.timer_started_at = None
+            db.commit()
+            return {"action": "captain_election_complete", "mode": event.display_mode}
+        token_value = get_settings().telegram_bot_token
+        if not token_value:
+            raise HTTPException(409, "Telegram-бот не настроен")
+        bot = Bot(token_value)
+        try:
+            for team in missing_teams:
+                active = db.scalar(select(CaptainElection).where(
+                    CaptainElection.team_id == team.id, CaptainElection.active.is_(True)
+                ))
+                if not active:
+                    try:
+                        await start_captain_election_for_team(db, team, bot, "screen")
+                    except ValueError as exc:
+                        raise HTTPException(409, str(exc))
+        finally:
+            await bot.session.close()
+        event.display_mode = "CAPTAIN_ELECTION_RUNNING"
+        event.timer_duration_seconds = ELECTION_DURATION_SECONDS
+        event.timer_started_at = datetime.utcnow()
+        db.commit()
+        return {"action": "captain_election_start", "mode": event.display_mode}
     question = db.get(Question, event.current_question_id) if event.current_question_id else None
     transitions = {
         "TIMER_READY": "TIMER",

@@ -1,7 +1,7 @@
 import secrets
 import json
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import quote
 from aiogram import Bot
@@ -28,7 +28,7 @@ from .runtime_state import CLUE_DELIVERY, CUSTOM_SLIDES, SCREEN_HEARTBEATS, SCRE
 from .public_url import public_base_url
 from .seed_game_content import seed_game_content_for_event
 from .fixed_program import ensure_fixed_program
-from .captain_elections import ELECTION_DURATION_SECONDS
+from .captain_elections import ELECTION_DURATION_SECONDS, start_captain_election_for_team
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -325,7 +325,7 @@ def live_control_state(
     elapsed = (datetime.utcnow() - event.timer_started_at).total_seconds() if event.timer_started_at else None
     remaining = max(0, event.timer_duration_seconds - int(elapsed)) if elapsed is not None else (
         event.timer_duration_seconds
-        if event.display_mode in {"TIMER_READY", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION_PAUSED"}
+        if event.display_mode in {"TIMER_READY", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION_PAUSED", "CAPTAIN_ELECTION_READY"}
         else None
     )
     question = db.get(Question, event.current_question_id) if event.current_question_id else None
@@ -395,6 +395,11 @@ def live_control_state(
         })
 
     next_labels = {
+        "INTRO": "Перейти к выбору капитанов",
+        "CAPTAIN_ELECTION_READY": "Сначала запустите голосование",
+        "CAPTAIN_ELECTION_RUNNING": "Завершить выбор капитанов",
+        "CAPTAIN_ELECTION_COMPLETE": "Показать правила игры",
+        "RULES": "Перейти к тестовому вопросу",
         "QUESTION": "Перейти к таймеру обсуждения",
         "TIMER_READY": "Сначала запустите таймер",
         "TIMER": "Перейти к таймеру ответов",
@@ -417,6 +422,11 @@ def live_control_state(
         "program": None if not program else {"id": program.id, "title": program.title},
         "mode": event.display_mode,
         "mode_label": {
+            "INTRO": "Приветствие",
+            "CAPTAIN_ELECTION_READY": "Выбор капитанов готов",
+            "CAPTAIN_ELECTION_RUNNING": "Идёт выбор капитанов",
+            "CAPTAIN_ELECTION_COMPLETE": "Капитаны выбраны",
+            "RULES": "Правила игры",
             "WELCOME": "Заставка", "QUESTION": "Вопрос показан",
             "TIMER_READY": "Таймер обсуждения готов", "TIMER": "Обсуждение", "TIMER_PAUSED": "Обсуждение на паузе",
             "SUBMISSION_READY": "Таймер ответа готов", "SUBMISSION": "Приём ответов", "SUBMISSION_PAUSED": "Приём ответов на паузе",
@@ -436,7 +446,7 @@ def live_control_state(
         "timer": {
             "remaining": remaining,
             "running": event.timer_started_at is not None and remaining is not None and remaining > 0,
-            "ready": event.display_mode in {"TIMER_READY", "SUBMISSION_READY"},
+            "ready": event.display_mode in {"TIMER_READY", "SUBMISSION_READY", "CAPTAIN_ELECTION_READY"},
             "paused": event.display_mode in {"TIMER_PAUSED", "SUBMISSION_PAUSED"},
         },
         "timeline": timeline,
@@ -445,7 +455,10 @@ def live_control_state(
         "next_label": next_labels.get(event.display_mode, "Продолжить"),
         "can_advance": bool(program or question) and detective_can_finish and event.display_mode not in {
             "TIMER_READY", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION_PAUSED"
-        },
+        } and not (
+            event.display_mode in {"CAPTAIN_ELECTION_READY", "CAPTAIN_ELECTION_RUNNING"}
+            and any(not team["captain"] for team in teams)
+        ),
         "screen": {
             "status": "offline" if heartbeat_age is None or heartbeat_age > 30 else ("stale" if heartbeat_age > 10 else "online"),
             "age": heartbeat_age,
@@ -1219,35 +1232,6 @@ async def launch_program(
     active_teams = db.scalars(select(Team).where(
         Team.event_id == event_id, Team.active.is_(True)
     ).order_by(Team.name)).all()
-    teams_needing_captain = [
-        team for team in active_teams
-        if len([player for player in team.players if player.active and player.role == PlayerRole.CAPTAIN]) != 1
-    ]
-    if teams_needing_captain:
-        if not get_settings().telegram_bot_token:
-            raise HTTPException(409, "Нельзя провести выбор капитанов: Telegram-бот не настроен")
-        problems = []
-        for team in teams_needing_captain:
-            candidates = [player for player in team.players if player.active and player.telegram_user_id]
-            if len(candidates) < 2:
-                problems.append(f"{team.name}: меньше двух зарегистрированных участников")
-        if problems:
-            raise HTTPException(409, "Нельзя начать выбор капитанов. " + "; ".join(problems))
-        started = 0
-        for team in teams_needing_captain:
-            active_election = db.scalar(select(CaptainElection).where(
-                CaptainElection.team_id == team.id, CaptainElection.active.is_(True)
-            ))
-            if not active_election:
-                await start_captain_election(event_id, team.id, db, actor)
-                started += 1
-        audit(db, actor, "program.captain_preflight", program, f"teams={len(teams_needing_captain)}; started={started}")
-        db.commit()
-        team_names = ", ".join(team.name for team in teams_needing_captain)
-        return go(
-            event_id, "people",
-            f"Игра пока не запущена. Нет капитана: {team_names}. Голосование на 60 секунд отправлено участникам этих команд.",
-        )
     program_items: list[tuple[str, Question | Stage]] = []
     for link in program.stage_links:
         stage = link.stage
@@ -1270,18 +1254,12 @@ async def launch_program(
     program.status = "RUNNING"
     program.started_at = datetime.utcnow()
     program.finished_at = None
-    first_kind, first = program_items[0]
-    if first_kind == "detective":
-        await start_detective_stage(db, event, first, actor)
-        first_detail = f"first_detective={first.id}"
-    else:
-        event.current_question_id = first.id
-        event.current_detective_stage_id = None
-        event.display_mode = "QUESTION"
-        event.timer_started_at = None
-        event.timer_duration_seconds = first.duration_seconds
-        set_question_status(db, first, QuestionStatus.OPEN, actor)
-        first_detail = f"first_question={first.id}"
+    event.current_question_id = None
+    event.current_detective_stage_id = None
+    event.display_mode = "INTRO"
+    event.timer_started_at = None
+    event.timer_duration_seconds = ELECTION_DURATION_SECONDS
+    first_detail = "intro"
     audit(db, actor, "program.launch", program, first_detail)
     db.commit()
     return go(event_id, "live")
@@ -1954,53 +1932,14 @@ async def start_captain_election(
         raise HTTPException(404, "Команда не найдена")
     if not get_settings().telegram_bot_token:
         raise HTTPException(409, "TELEGRAM_BOT_TOKEN не настроен")
-    candidates = [player for player in team.players if player.active and player.telegram_user_id]
-    if len(candidates) < 2:
-        raise HTTPException(409, "Для голосования нужны минимум два зарегистрированных игрока")
-    for old in db.scalars(select(CaptainElection).where(CaptainElection.team_id == team.id, CaptainElection.active.is_(True))).all():
-        old.active = False
-        old.finished_at = datetime.utcnow()
-    election = CaptainElection(
-        team_id=team.id,
-        expires_at=datetime.utcnow() + timedelta(seconds=ELECTION_DURATION_SECONDS),
-    )
-    db.add(election); db.flush()
     bot = Bot(get_settings().telegram_bot_token)
-    delivered = 0
-    failed = 0
     try:
-        for player in candidates:
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(
-                    text=candidate.full_name,
-                    callback_data=f"captainvote:{election.id}:{candidate.id}",
-                )]
-                for candidate in candidates if candidate.id != player.id
-            ])
-            text = (
-                "Команда капитанын таңдаңыз. Өзіңізге дауыс беруге болмайды — басқа қатысушыны таңдаңыз.\n\n"
-                if player.preferred_language == "KK" else
-                "Выберите капитана команды. Голосовать за себя нельзя — выберите другого участника.\n\n"
-            ) + (
-                f"У вас есть {ELECTION_DURATION_SECONDS} секунд. После этого капитаном станет участник с наибольшим числом голосов.\n\n"
-                f"Проголосовало: 0 из {len(candidates)}."
-                if player.preferred_language != "KK" else
-                f"Дауыс беруге {ELECTION_DURATION_SECONDS} секунд беріледі. Содан кейін ең көп дауыс жинаған қатысушы капитан болады.\n\n"
-                f"Дауыс бергендер: 0 / {len(candidates)}."
-            )
-            try:
-                await bot.send_message(player.telegram_user_id, text, reply_markup=keyboard)
-                delivered += 1
-            except Exception:
-                failed += 1
+        try:
+            await start_captain_election_for_team(db, team, bot, actor)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc))
     finally:
         await bot.session.close()
-    if delivered < 2:
-        db.delete(election)
-        db.rollback()
-        raise HTTPException(409, "Не удалось доставить голосование минимум двум участникам команды")
-    audit(db, actor, "captain_election.start", team, f"election={election.id}; delivered={delivered}; failed={failed}")
-    db.commit()
     return go(event_id, "people")
 
 
