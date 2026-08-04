@@ -101,7 +101,12 @@
                   <input type="hidden" name="team_answers_enabled" value="on"><input type="hidden" name="show_anonymous_answers" value="on">
                   <button>Сохранить изменения</button>
                 </form>
-                <form method="post" action="/admin/events/{{ event.id }}/questions/{{ q.id }}/delete" onsubmit="return confirm('Удалить вопрос и ответы на него?')"><button class="link-danger">Удалить вопрос</button></form>
+                <div class="question-actions">
+                  <form method="post" action="/admin/events/{{ event.id }}/questions/{{ q.id }}/move"><button class="secondary" name="direction" value="up">↑ Выше</button></form>
+                  <form method="post" action="/admin/events/{{ event.id }}/questions/{{ q.id }}/move"><button class="secondary" name="direction" value="down">↓ Ниже</button></form>
+                  <form method="post" action="/admin/events/{{ event.id }}/questions/{{ q.id }}/copy"><button class="secondary">⧉ Создать копию</button></form>
+                  <form method="post" action="/admin/events/{{ event.id }}/questions/{{ q.id }}/delete" onsubmit="return confirm('Удалить вопрос и ответы на него?')"><button class="link-danger">Удалить вопрос</button></form>
+                </div>
               </div>
             </details>
           {% else %}<div class="empty-inline">В этом этапе пока нет вопросов.</div>{% endfor %}

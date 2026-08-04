@@ -1478,6 +1478,78 @@ def delete_question(
     return go(event_id, "content")
 
 
+@router.post("/events/{event_id}/questions/{question_id}/copy")
+def copy_question(
+    event_id: int, question_id: int,
+    db: Session = Depends(get_db), actor=Depends(admin_auth),
+):
+    source = db.get(Question, question_id)
+    if not source or source.stage.event_id != event_id:
+        raise HTTPException(404, "Вопрос не найден")
+    position = (db.scalar(select(func.max(Question.position)).where(
+        Question.stage_id == source.stage_id
+    )) or 0) + 1
+    duplicate = Question(
+        stage_id=source.stage_id,
+        position=position,
+        title=f"{source.title} — копия",
+        text=source.text,
+        correct_answer=source.correct_answer,
+        explanation=source.explanation,
+        title_kk=f"{source.title_kk} — көшірме" if source.title_kk else "",
+        text_kk=source.text_kk,
+        correct_answer_kk=source.correct_answer_kk,
+        explanation_kk=source.explanation_kk,
+        personal_answers_enabled=source.personal_answers_enabled,
+        team_answers_enabled=source.team_answers_enabled,
+        personal_points=source.personal_points,
+        team_points=source.team_points,
+        duration_seconds=source.duration_seconds,
+        submission_seconds=source.submission_seconds,
+        question_type=source.question_type,
+        options_json=source.options_json,
+        show_anonymous_answers=source.show_anonymous_answers,
+        status=QuestionStatus.DRAFT,
+    )
+    db.add(duplicate)
+    db.flush()
+    audit(db, actor, "question.copy", duplicate, f"source={source.id}")
+    db.commit()
+    return go(event_id, "content")
+
+
+@router.post("/events/{event_id}/questions/{question_id}/move")
+def move_question(
+    event_id: int, question_id: int, direction: str = Form(...),
+    db: Session = Depends(get_db), actor=Depends(admin_auth),
+):
+    question = db.get(Question, question_id)
+    if not question or question.stage.event_id != event_id:
+        raise HTTPException(404, "Вопрос не найден")
+    if direction not in {"up", "down"}:
+        raise HTTPException(400, "Неизвестное направление")
+    ordering = Question.position.desc() if direction == "up" else Question.position.asc()
+    comparison = Question.position < question.position if direction == "up" else Question.position > question.position
+    neighbour = db.scalar(select(Question).where(
+        Question.stage_id == question.stage_id,
+        comparison,
+    ).order_by(ordering))
+    if neighbour:
+        original_position = question.position
+        neighbour_position = neighbour.position
+        temporary_position = (db.scalar(select(func.max(Question.position)).where(
+            Question.stage_id == question.stage_id
+        )) or 0) + 1
+        question.position = temporary_position
+        db.flush()
+        neighbour.position = original_position
+        db.flush()
+        question.position = neighbour_position
+        audit(db, actor, "question.move", question, f"direction={direction}; from={original_position}; to={neighbour_position}")
+        db.commit()
+    return go(event_id, "content")
+
+
 @router.get("/events/{event_id}/content/export")
 def export_content(event_id: int, db: Session = Depends(get_db), actor=Depends(admin_auth)):
     event = require_event(db, event_id)
