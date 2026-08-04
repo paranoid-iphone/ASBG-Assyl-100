@@ -87,8 +87,13 @@
                     <div><h4>Қазақша</h4><label>Атауы<input name="title_kk" value="{{ q.title_kk }}"></label><label>Сұрақ мәтіні<textarea name="text_kk">{{ q.text_kk }}</textarea></label><label>Дұрыс жауап<input name="correct_answer_kk" value="{{ q.correct_answer_kk }}"></label><label>Түсіндірме<textarea name="explanation_kk">{{ q.explanation_kk }}</textarea></label></div>
                   </div>
                   <div class="settings-strip">
-                    <label>Формат<select name="question_type"><option value="TEXT" {% if q.question_type.value=='TEXT' %}selected{% endif %}>Написать ответ</option><option value="CHOICE" {% if q.question_type.value=='CHOICE' %}selected{% endif %}>Выбрать один вариант</option><option value="CHOICE_EXPLANATION" {% if q.question_type.value=='CHOICE_EXPLANATION' %}selected{% endif %}>Вариант + пояснение</option></select></label>
-                    <label class="wide-setting">Варианты, каждый с новой строки<textarea name="options_text">{{ question_options[q.id] }}</textarea></label>
+                    {% if s.system_key=='choice' %}
+                    <label>Формат<select name="question_type"><option value="CHOICE" {% if q.question_type.value=='CHOICE' %}selected{% endif %}>Выбрать один вариант</option><option value="CHOICE_EXPLANATION" {% if q.question_type.value=='CHOICE_EXPLANATION' %}selected{% endif %}>Вариант + пояснение</option></select></label>
+                    <label class="wide-setting">Варианты, каждый с новой строки<textarea name="options_text" required>{{ question_options[q.id] }}</textarea></label>
+                    {% else %}
+                    <input type="hidden" name="question_type" value="TEXT">
+                    <input type="hidden" name="options_text" value="">
+                    {% endif %}
                     <label>Обсуждение<input type="number" name="duration_seconds" value="{{ q.duration_seconds }}" min="5" max="3600"></label>
                     <label>Отправка<input type="number" name="submission_seconds" value="{{ q.submission_seconds }}" min="5" max="300"></label>
                     <label>Баллы<input type="number" step=".5" name="team_points" value="{{ q.team_points }}" min="0"></label>
@@ -111,8 +116,13 @@
                 <div><h4>Қазақша</h4><label>Атауы<input name="title_kk"></label><label>Сұрақ мәтіні<textarea name="text_kk"></textarea></label><label>Дұрыс жауап<input name="correct_answer_kk"></label><label>Түсіндірме<textarea name="explanation_kk"></textarea></label></div>
               </div>
               <div class="settings-strip">
-                <label>Как отвечает команда?<select name="question_type"><option value="TEXT">Пишет ответ</option><option value="CHOICE">Выбирает один вариант</option><option value="CHOICE_EXPLANATION">Выбирает вариант и поясняет</option></select></label>
-                <label class="wide-setting">Варианты ответа, каждый с новой строки<textarea name="options_text" placeholder="Вариант 1&#10;Вариант 2&#10;Вариант 3"></textarea></label>
+                {% if s.system_key=='choice' %}
+                <label>Как отвечает команда?<select name="question_type"><option value="CHOICE">Выбирает один вариант</option><option value="CHOICE_EXPLANATION">Выбирает вариант и поясняет</option></select></label>
+                <label class="wide-setting">Варианты ответа, каждый с новой строки<textarea name="options_text" required placeholder="Вариант 1&#10;Вариант 2&#10;Вариант 3"></textarea></label>
+                {% else %}
+                <input type="hidden" name="question_type" value="TEXT">
+                <input type="hidden" name="options_text" value="">
+                {% endif %}
                 <label>Обсуждение, сек.<input type="number" name="duration_seconds" value="{{ s.default_duration_seconds }}" min="5" max="3600"></label>
                 <label>Отправка, сек.<input type="number" name="submission_seconds" value="{{ s.default_submission_seconds }}" min="5" max="300"></label>
                 <label>Баллы<input type="number" step=".5" min="0" name="team_points" value="{{ s.default_team_points }}"></label>

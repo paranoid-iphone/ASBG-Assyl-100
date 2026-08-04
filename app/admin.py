@@ -1381,6 +1381,17 @@ def create_question(
 ):
     stage = db.get(Stage, stage_id)
     if not stage or stage.event_id != event_id: raise HTTPException(400, "Некорректный этап")
+    options = [x.strip() for x in options_text.splitlines() if x.strip()]
+    if stage.system_key == "choice":
+        if question_type not in {QuestionType.CHOICE, QuestionType.CHOICE_EXPLANATION}:
+            question_type = QuestionType.CHOICE
+        if len(options) < 2:
+            raise HTTPException(400, "Для второго этапа добавьте минимум два варианта ответа")
+    else:
+        question_type = QuestionType.TEXT
+        options = []
+    if stage.system_key == "test":
+        personal_points = team_points = 0
     position = (db.scalar(select(func.max(Question.position)).where(Question.stage_id == stage_id)) or 0) + 1
     question = Question(
         stage_id=stage_id, title=title, text=text, correct_answer=correct_answer, explanation=explanation,
@@ -1389,7 +1400,7 @@ def create_question(
         personal_answers_enabled=personal_answers_enabled, team_answers_enabled=team_answers_enabled,
         duration_seconds=max(5, min(duration_seconds, 3600)),
         submission_seconds=max(5, min(submission_seconds, 300)), question_type=question_type,
-        options_json=json.dumps([x.strip() for x in options_text.splitlines() if x.strip()], ensure_ascii=False),
+        options_json=json.dumps(options, ensure_ascii=False),
         show_anonymous_answers=show_anonymous_answers,
     )
     db.add(question); db.flush(); audit(db, actor, "question.create", question, title)
@@ -1414,6 +1425,17 @@ def edit_question(
     question = db.get(Question, question_id)
     if not question or question.stage.event_id != event_id:
         raise HTTPException(404, "Вопрос не найден")
+    options = [line.strip() for line in options_text.splitlines() if line.strip()]
+    if question.stage.system_key == "choice":
+        if question_type not in {QuestionType.CHOICE, QuestionType.CHOICE_EXPLANATION}:
+            question_type = QuestionType.CHOICE
+        if len(options) < 2:
+            raise HTTPException(400, "Для второго этапа добавьте минимум два варианта ответа")
+    else:
+        question_type = QuestionType.TEXT
+        options = []
+    if question.stage.system_key == "test":
+        team_points = 0
     question.title = title.strip()
     question.text = text.strip()
     question.correct_answer = correct_answer.strip()
@@ -1426,9 +1448,7 @@ def edit_question(
     question.submission_seconds = max(5, min(submission_seconds, 300))
     question.team_points = max(0, min(team_points, 10000))
     question.question_type = question_type
-    question.options_json = json.dumps(
-        [line.strip() for line in options_text.splitlines() if line.strip()], ensure_ascii=False
-    )
+    question.options_json = json.dumps(options, ensure_ascii=False)
     question.team_answers_enabled = team_answers_enabled
     question.show_anonymous_answers = show_anonymous_answers
     audit(db, actor, "question.edit", question, question.title)

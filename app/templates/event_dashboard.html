@@ -262,9 +262,8 @@ sync();setInterval(sync,1000);
           <label>Название<input name="name" value="{{ t.name }}"></label>
           <label>Код команды<input name="code" value="{{ t.code }}" maxlength="40"><span class="muted">Используется при привязке беседы</span></label>
           <label>Количество мест<input type="number" name="capacity" value="{{ t.capacity }}" min="1" max="100"></label>
-          <label>Telegram chat ID<input name="telegram_chat_id" value="{{ t.telegram_chat_id or '' }}" placeholder="-1001234567890"></label>
-          <label>Ссылка-приглашение<input name="telegram_invite_url" value="{{ t.telegram_invite_url or '' }}" placeholder="https://t.me/+..."></label>
-          <p class="muted">Для автоматической привязки добавьте бота в беседу, назначьте администратором с правом приглашать пользователей и отправьте <code>/bind_team</code>. Организатор-администратор может указать команду: <code>/bind_team {{ t.code }}</code>.</p>
+          <input type="hidden" name="telegram_chat_id" value="{{ t.telegram_chat_id or '' }}">
+          <input type="hidden" name="telegram_invite_url" value="{{ t.telegram_invite_url or '' }}">
           <label>Загадка названия RU<textarea name="gathering_riddle_ru">{{ t.gathering_riddle_ru or '' }}</textarea></label>
           <label>Загадка названия KZ<textarea name="gathering_riddle_kk">{{ t.gathering_riddle_kk or '' }}</textarea></label>
           <label><input type="checkbox" name="active" {% if t.active %}checked{% endif %}> команда активна</label>
@@ -273,8 +272,6 @@ sync();setInterval(sync,1000);
         <hr>
         <form method="post" action="/admin/events/{{ event.id }}/teams/{{ t.id }}/briefing"><button>1. Разослать список сокомандников</button></form>
         <form method="post" action="/admin/events/{{ event.id }}/teams/{{ t.id }}/riddle"><button class="amber">2. Разослать загадку названия</button></form>
-        <form method="post" action="/admin/events/{{ event.id }}/teams/{{ t.id }}/invite"><button class="gray">3. Разослать ссылку на беседу</button></form>
-        {% if t.telegram_chat_id or t.telegram_invite_url %}<form method="post" action="/admin/events/{{ event.id }}/teams/{{ t.id }}/telegram/unbind" onsubmit="return confirm('Отвязать Telegram-беседу от команды «{{ t.name }}»? Команда и участники останутся без изменений.')"><button class="red">Отвязать Telegram-беседу</button></form>{% endif %}
         <form method="post" action="/admin/events/{{ event.id }}/teams/{{ t.id }}/election/start"><button class="amber">Начать выбор капитана</button></form>
         <form method="post" action="/admin/events/{{ event.id }}/teams/{{ t.id }}/election/finish"><button class="green">Завершить выбор капитана</button></form>
       </div></details>
