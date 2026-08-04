@@ -35,6 +35,10 @@ def test_program_starts_with_intro_then_captain_stage_and_rules():
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "captain_election_ready"
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "captain_election_complete"
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "rules"
+        assert client.post(f"/api/screen/{token}/advance").json()["action"] == "stage_intro"
+        assert client.get(f"/api/screen/{token}").json()["mode"] == "STAGE_INTRO"
+        assert client.post(f"/api/screen/{token}/advance").json()["action"] == "question_intro"
+        assert client.get(f"/api/screen/{token}").json()["mode"] == "QUESTION_INTRO"
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "question"
 
 
@@ -60,8 +64,13 @@ def test_reserve_stage_requires_an_explicit_decision():
     with TestClient(app) as client:
         response = client.post(f"/api/screen/{token}/next")
         assert response.status_code == 200
-        assert response.json()["action"] == "reserve_ready"
+        assert response.json()["action"] == "stage_complete"
+        assert client.get(f"/api/screen/{token}").json()["mode"] == "STAGE_COMPLETE"
+        assert client.post(f"/api/screen/{token}/advance").json()["action"] == "reserve_ready"
         assert client.get(f"/api/screen/{token}").json()["mode"] == "RESERVE_READY"
+        reserve_intro = client.post(f"/api/screen/{token}/advance").json()
+        assert reserve_intro["action"] == "question_intro"
+        assert reserve_intro["question_id"] == reserve_question_id
         assert client.post(f"/api/screen/{token}/advance").json()["question_id"] == reserve_question_id
 
 
