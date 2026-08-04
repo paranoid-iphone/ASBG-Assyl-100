@@ -65,9 +65,10 @@ def test_deleting_team_returns_telegram_players_to_pool():
         assert db.scalar(select(func.count(PendingRegistration.id))) == 1
 
 
-def test_running_game_cannot_partially_change_player():
+def test_running_game_allows_role_change_but_protects_identity():
     event_id, team_id, player_id = create_registered_player()
     with SessionLocal() as db:
+        original_name = db.get(Player, player_id).full_name
         db.add(GameProgram(event_id=event_id, title="Running", status="RUNNING"))
         db.commit()
 
@@ -87,3 +88,20 @@ def test_running_game_cannot_partially_change_player():
         player = db.get(Player, player_id)
         assert player.full_name != "Changed name"
         assert player.role == PlayerRole.PLAYER
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/admin/events/{event_id}/players/{player_id}",
+            auth=("admin", "change-me"),
+            data={
+                "full_name": original_name, "role": PlayerRole.CAPTAIN.value,
+                "team_id": team_id, "active": "true",
+            },
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+    with SessionLocal() as db:
+        player = db.get(Player, player_id)
+        assert player.full_name == original_name
+        assert player.role == PlayerRole.CAPTAIN

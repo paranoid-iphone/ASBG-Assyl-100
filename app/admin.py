@@ -729,7 +729,6 @@ def finish_live_program(
 @router.post("/events/{event_id}/teams")
 def create_team(event_id: int, name: str = Form(...), code: str = Form(""), capacity: int = Form(10), db: Session = Depends(get_db), actor=Depends(admin_auth)):
     require_event(db, event_id)
-    require_roster_unlocked(db, event_id)
     team = Team(event_id=event_id, name=name, code=unique_team_code(db, event_id, code, name), capacity=max(1, min(capacity, 100)))
     db.add(team); db.flush(); audit(db, actor, "team.create", team, name); db.commit()
     return go(event_id, "people")
@@ -839,7 +838,6 @@ def delete_team(
 
 @router.post("/events/{event_id}/players")
 def create_player(event_id: int, team_id: int = Form(...), full_name: str = Form(...), registration_code: str = Form(""), role: PlayerRole = Form(...), db: Session = Depends(get_db), actor=Depends(admin_auth)):
-    require_roster_unlocked(db, event_id)
     team = db.get(Team, team_id)
     if not team or team.event_id != event_id: raise HTTPException(400, "Некорректная команда")
     running = db.scalar(select(Stage).where(
@@ -865,9 +863,18 @@ def edit_player(
     team_id: int = Form(...), active: bool = Form(False), reset_telegram: bool = Form(False),
     db: Session = Depends(get_db), actor=Depends(admin_auth),
 ):
-    require_roster_unlocked(db, event_id)
     player = db.get(Player, player_id)
     if not player or not player.team or player.team.event_id != event_id: raise HTTPException(404, "Игрок не найден")
+    running_program = db.scalar(select(GameProgram.id).where(
+        GameProgram.event_id == event_id,
+        GameProgram.status == "RUNNING",
+    ))
+    if running_program and (full_name.strip() != player.full_name or reset_telegram):
+        db.rollback()
+        raise HTTPException(
+            409,
+            "Во время игры нельзя изменять имя участника или отвязывать Telegram. Команду и роль менять можно.",
+        )
     target_team = db.get(Team, team_id)
     if not target_team or target_team.event_id != event_id:
         raise HTTPException(400, "Команда не найдена")
@@ -878,7 +885,7 @@ def edit_player(
         )).all():
             teammate.role = PlayerRole.PLAYER
     player.team_id = target_team.id
-    player.full_name, player.role, player.active = full_name, role, active
+    player.full_name, player.role, player.active = full_name.strip(), role, active
     if reset_telegram: player.telegram_user_id = player.telegram_username = player.registered_at = None
     if old_team_id != target_team.id or old_active != active:
         affected_teams = [old_team_id, target_team.id]
@@ -948,7 +955,6 @@ async def assign_pending_registration(
     role: PlayerRole = Form(PlayerRole.PLAYER),
     db: Session = Depends(get_db), actor=Depends(admin_auth),
 ):
-    require_roster_unlocked(db, event_id)
     pending = db.get(PendingRegistration, registration_id)
     team = db.get(Team, team_id)
     if not pending or pending.event_id != event_id:
@@ -996,7 +1002,6 @@ async def assign_pending_registrations_bulk(
     actor=Depends(admin_auth),
 ):
     event = require_event(db, event_id)
-    require_roster_unlocked(db, event_id)
     form = await request.form()
     assignments: list[tuple[PendingRegistration, Team, PlayerRole]] = []
     for key, raw_team_id in form.multi_items():
