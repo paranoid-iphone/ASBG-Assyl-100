@@ -154,6 +154,37 @@ def clear_detective_cases_for_teams(db: Session, team_ids: list[int]) -> None:
     db.execute(delete(DetectiveCase).where(DetectiveCase.id.in_(case_ids)))
 
 
+def return_player_to_registration_pool(db: Session, player: Player, event_id: int) -> bool:
+    """Return a Telegram-registered participant to the unassigned pool."""
+    if not player.telegram_user_id:
+        return False
+    existing = db.scalar(select(PendingRegistration).where(
+        PendingRegistration.telegram_user_id == player.telegram_user_id
+    ))
+    if not existing:
+        db.add(PendingRegistration(
+            event_id=event_id,
+            full_name=player.full_name,
+            telegram_user_id=player.telegram_user_id,
+            telegram_username=player.telegram_username,
+            preferred_language=player.preferred_language,
+            created_at=player.registered_at or datetime.utcnow(),
+        ))
+    return True
+
+
+def delete_player_dependencies(db: Session, player: Player) -> None:
+    db.execute(delete(CaptainVote).where(
+        (CaptainVote.voter_player_id == player.id) | (CaptainVote.candidate_player_id == player.id)
+    ))
+    db.execute(delete(DetectiveSubmission).where(DetectiveSubmission.captain_id == player.id))
+    db.execute(delete(DetectiveClue).where(DetectiveClue.player_id == player.id))
+    db.execute(delete(Answer).where(
+        (Answer.player_id == player.id) | (Answer.respondent_player_id == player.id)
+    ))
+    db.execute(delete(ScoreAdjustment).where(ScoreAdjustment.player_id == player.id))
+
+
 @router.get("", response_class=HTMLResponse)
 def event_list(request: Request, db: Session = Depends(get_db), actor: str = Depends(admin_auth)):
     primary_event = db.scalar(select(Event).order_by(Event.id))
@@ -722,7 +753,9 @@ def delete_team(
         raise HTTPException(404, "Команда не найдена")
     if confirmation.strip() != team.name:
         raise HTTPException(400, "Для удаления введите точное название команды")
-    player_ids = list(db.scalars(select(Player.id).where(Player.team_id == team.id)).all())
+    team_players = list(db.scalars(select(Player).where(Player.team_id == team.id)).all())
+    player_ids = [player.id for player in team_players]
+    returned_to_pool = sum(return_player_to_registration_pool(db, player, event_id) for player in team_players)
     case_ids = list(db.scalars(select(DetectiveCase.id).where(DetectiveCase.team_id == team.id)).all())
     election_ids = list(db.scalars(select(CaptainElection.id).where(CaptainElection.team_id == team.id)).all())
     if election_ids or player_ids:
@@ -753,7 +786,10 @@ def delete_team(
     db.execute(delete(CaptainElection).where(CaptainElection.team_id == team.id))
     db.execute(delete(Player).where(Player.team_id == team.id))
     name = team.name
-    audit(db, actor, "team.delete", require_event(db, event_id), f"{name}; players={len(player_ids)}")
+    audit(
+        db, actor, "team.delete", require_event(db, event_id),
+        f"{name}; players={len(player_ids)}; returned_to_pool={returned_to_pool}",
+    )
     db.delete(team)
     db.commit()
     return go(event_id, "people")
@@ -833,19 +869,33 @@ def delete_player(
     if running:
         raise HTTPException(409, "Нельзя удалять участников во время запущенного детектива")
     team_id = player.team_id
-    db.execute(delete(CaptainVote).where(
-        (CaptainVote.voter_player_id == player.id) | (CaptainVote.candidate_player_id == player.id)
-    ))
-    db.execute(delete(DetectiveSubmission).where(DetectiveSubmission.captain_id == player.id))
-    db.execute(delete(DetectiveClue).where(DetectiveClue.player_id == player.id))
-    db.execute(delete(Answer).where(
-        (Answer.player_id == player.id) | (Answer.respondent_player_id == player.id)
-    ))
-    db.execute(delete(ScoreAdjustment).where(ScoreAdjustment.player_id == player.id))
+    delete_player_dependencies(db, player)
     clear_detective_cases_for_teams(db, [team_id])
     name = player.full_name
     db.delete(player)
     audit(db, actor, "player.delete", require_event(db, event_id), f"{name}; team={team_id}")
+    db.commit()
+    return go(event_id, "people")
+
+
+@router.post("/events/{event_id}/players/{player_id}/unassign")
+def unassign_player(
+    event_id: int, player_id: int,
+    db: Session = Depends(get_db), actor=Depends(admin_auth),
+):
+    require_roster_unlocked(db, event_id)
+    player = db.get(Player, player_id)
+    if not player or not player.team or player.team.event_id != event_id:
+        raise HTTPException(404, "Участник не найден")
+    if not player.telegram_user_id:
+        raise HTTPException(409, "Участник без Telegram не может быть возвращён в регистрационный пул")
+    team_id = player.team_id
+    name = player.full_name
+    return_player_to_registration_pool(db, player, event_id)
+    delete_player_dependencies(db, player)
+    clear_detective_cases_for_teams(db, [team_id])
+    db.delete(player)
+    audit(db, actor, "player.unassign", require_event(db, event_id), f"{name}; team={team_id}")
     db.commit()
     return go(event_id, "people")
 

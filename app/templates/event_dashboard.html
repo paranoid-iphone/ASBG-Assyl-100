@@ -252,6 +252,7 @@ sync();setInterval(sync,1000);
               <label class="check-label"><input type="checkbox" name="reset_telegram"> отвязать Telegram</label>
               <button>Сохранить</button>
             </form>
+            {% if p.telegram_user_id %}<form method="post" action="/admin/events/{{ event.id }}/players/{{ p.id }}/unassign" onsubmit="return confirm('Вернуть «{{ p.full_name }}» в список нераспределённых участников? Результаты этого участника будут очищены.')"><button class="gray">Убрать из команды</button></form>{% endif %}
             <details class="danger-details"><summary>Удалить участника</summary><form method="post" action="/admin/events/{{ event.id }}/players/{{ p.id }}/delete" onsubmit="return confirm('Удалить участника «{{ p.full_name }}» и его результаты?')"><label>Введите точное имя: <b>{{ p.full_name }}</b><input name="confirmation" required autocomplete="off"></label><button class="red">Удалить участника</button></form></details>
           </div></details>
         </div>{% else %}<div class="empty-note">В команде пока нет участников.</div>{% endfor %}
@@ -278,10 +279,10 @@ sync();setInterval(sync,1000);
         <form method="post" action="/admin/events/{{ event.id }}/teams/{{ t.id }}/election/finish"><button class="green">Завершить выбор капитана</button></form>
       </div></details>
       <details class="danger-details"><summary>Удалить команду</summary><div class="danger-panel">
-        <p><b>Будут удалены все игроки этой команды, её ответы, баллы, выборы капитана и детективные кейсы.</b></p>
+        <p><b>Команда и её игровые результаты будут удалены. Участники с подключённым Telegram вернутся в нераспределённый пул.</b></p>
         <form method="post" action="/admin/events/{{ event.id }}/teams/{{ t.id }}/delete" onsubmit="return confirm('Окончательно удалить команду «{{ t.name }}» и все связанные данные?')">
           <label>Для подтверждения введите: <b>{{ t.name }}</b><input name="confirmation" required autocomplete="off"></label>
-          <button class="red">Удалить без возможности восстановления</button>
+          <button class="red">Удалить команду</button>
         </form>
       </div></details>
     </article>
@@ -308,6 +309,7 @@ sync();setInterval(sync,1000);
         <label><input type="checkbox" name="reset_telegram"> отвязать Telegram</label>
         <button>Сохранить изменения</button>
       </form>
+      {% if p.telegram_user_id %}<form method="post" action="/admin/events/{{ event.id }}/players/{{ p.id }}/unassign" onsubmit="return confirm('Вернуть «{{ p.full_name }}» в список нераспределённых участников?')"><button class="gray">Убрать из команды</button></form>{% endif %}
     </div></details></td>
   </tr>{% else %}<tr><td colspan="6" class="empty-note">Игроков пока нет.</td></tr>{% endfor %}
   </tbody></table></div>
