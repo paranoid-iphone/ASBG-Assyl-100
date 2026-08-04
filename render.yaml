@@ -2,6 +2,7 @@ services:
   - type: web
     name: intellectual-game-platform
     runtime: python
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
@@ -22,5 +23,6 @@ services:
 
 databases:
   - name: intellectual-game-db
+    plan: free
     databaseName: intellectual_game
     user: game_admin
