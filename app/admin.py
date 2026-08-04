@@ -247,7 +247,8 @@ def event_dashboard(
     ).all()
     active_program = next((program for program in programs if program.status == "RUNNING"), None)
     answers = db.scalars(
-        select(Answer).join(Question).join(Stage).where(Stage.event_id == event.id).order_by(Answer.id.desc()).limit(150)
+        select(Answer).join(Question).join(Stage).where(Stage.event_id == event.id)
+        .order_by(Stage.position, Question.position, Answer.submitted_at)
     ).all()
     answer_counts = dict(db.execute(
         select(Answer.question_id, func.count(Answer.id)).join(Question).join(Stage)
