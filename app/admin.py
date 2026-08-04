@@ -1,7 +1,7 @@
 import secrets
 import json
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from aiogram import Bot
 from aiogram.types import BufferedInputFile, InlineKeyboardButton, InlineKeyboardMarkup
@@ -27,6 +27,7 @@ from .runtime_state import CLUE_DELIVERY, CUSTOM_SLIDES, SCREEN_HEARTBEATS, SCRE
 from .public_url import public_base_url
 from .seed_game_content import seed_game_content_for_event
 from .fixed_program import ensure_fixed_program
+from .captain_elections import ELECTION_DURATION_SECONDS
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -1948,7 +1949,10 @@ async def start_captain_election(
     for old in db.scalars(select(CaptainElection).where(CaptainElection.team_id == team.id, CaptainElection.active.is_(True))).all():
         old.active = False
         old.finished_at = datetime.utcnow()
-    election = CaptainElection(team_id=team.id)
+    election = CaptainElection(
+        team_id=team.id,
+        expires_at=datetime.utcnow() + timedelta(seconds=ELECTION_DURATION_SECONDS),
+    )
     db.add(election); db.flush()
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=player.full_name, callback_data=f"captainvote:{election.id}:{player.id}")]
@@ -1963,7 +1967,13 @@ async def start_captain_election(
                 "Команда капитанын таңдаңыз. Өзіңізге дауыс беруге болмайды — басқа қатысушыны таңдаңыз.\n\n"
                 if player.preferred_language == "KK" else
                 "Выберите капитана команды. Голосовать за себя нельзя — выберите другого участника.\n\n"
-            ) + f"Проголосовало: 0 из {len(candidates)}."
+            ) + (
+                f"У вас есть {ELECTION_DURATION_SECONDS} секунд. После этого капитаном станет участник с наибольшим числом голосов.\n\n"
+                f"Проголосовало: 0 из {len(candidates)}."
+                if player.preferred_language != "KK" else
+                f"Дауыс беруге {ELECTION_DURATION_SECONDS} секунд беріледі. Содан кейін ең көп дауыс жинаған қатысушы капитан болады.\n\n"
+                f"Дауыс бергендер: 0 / {len(candidates)}."
+            )
             try:
                 await bot.send_message(player.telegram_user_id, text, reply_markup=keyboard)
                 delivered += 1

@@ -1,3 +1,5 @@
+import asyncio
+from contextlib import suppress
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, F, Router
@@ -17,6 +19,7 @@ from .services import (
     submit_detective_answer,
 )
 from .runtime_state import TEMPORARY_SENDERS
+from .captain_elections import captain_election_watchdog, election_deadline, finalize_captain_election
 
 router = Router()
 BOT_RUNTIME = {"configured": False, "connected": False, "username": None, "error": None}
@@ -678,14 +681,16 @@ async def save_answer(message: Message, state: FSMContext, scope: AnswerScope):
 async def captain_vote(callback: CallbackQuery):
     _, election_id, candidate_id = callback.data.split(":")
     winner_name = None
-    winner_recipients: list[tuple[str, str]] = []
     candidate_name = None
     vote_count = eligible_count = 0
     with SessionLocal() as db:
         voter = get_player_by_telegram(db, str(callback.from_user.id))
         election = db.get(CaptainElection, int(election_id))
         candidate = db.get(Player, int(candidate_id))
-        if not voter or not election or not election.active or voter.team_id != election.team_id:
+        if (
+            not voter or not election or not election.active or voter.team_id != election.team_id
+            or election_deadline(election) <= datetime.utcnow()
+        ):
             await callback.answer("Вы не можете голосовать в этой команде.", show_alert=True)
             return
         if not candidate or candidate.team_id != election.team_id or not candidate.active:
@@ -717,27 +722,10 @@ async def captain_vote(callback: CallbackQuery):
         vote_count = db.scalar(select(func.count(CaptainVote.id)).where(
             CaptainVote.election_id == election.id
         )) or 0
-        if vote_count >= eligible_count:
-            counts = db.execute(
-                select(CaptainVote.candidate_player_id, func.count(CaptainVote.id).label("votes"))
-                .where(CaptainVote.election_id == election.id)
-                .group_by(CaptainVote.candidate_player_id)
-                .order_by(func.count(CaptainVote.id).desc())
-            ).all()
-            if counts and (len(counts) == 1 or counts[0].votes > counts[1].votes):
-                winner = db.get(Player, counts[0].candidate_player_id)
-                teammates = db.scalars(select(Player).where(Player.team_id == election.team_id)).all()
-                for teammate in teammates:
-                    if teammate.role != PlayerRole.ADMIN:
-                        teammate.role = PlayerRole.CAPTAIN if teammate.id == winner.id else PlayerRole.PLAYER
-                election.active = False
-                election.finished_at = datetime.utcnow()
-                winner_name = winner.full_name
-                winner_recipients = [
-                    (teammate.telegram_user_id, teammate.preferred_language)
-                    for teammate in teammates if teammate.active and teammate.telegram_user_id
-                ]
+        finish_now = vote_count >= eligible_count
         db.commit()
+    if finish_now:
+        winner_name = await finalize_captain_election(int(election_id), callback.bot, "all_votes_received")
     await callback.answer(f"Ваш голос принят: {candidate_name}", show_alert=True)
     if callback.message:
         try:
@@ -760,19 +748,6 @@ async def captain_vote(callback: CallbackQuery):
         except Exception:
             # Голос уже сохранён; ошибка обновления сообщения не должна его отменять.
             pass
-    if winner_name:
-        for telegram_user_id, language in winner_recipients:
-            if str(telegram_user_id) == str(callback.from_user.id):
-                continue
-            try:
-                text = (
-                    f"✅ Дауыс беру аяқталды.\nКоманда капитаны: {winner_name}"
-                    if language == "KK" else
-                    f"✅ Голосование завершено.\nКапитан команды: {winner_name}"
-                )
-                await callback.bot.send_message(telegram_user_id, text)
-            except Exception:
-                pass
 
 
 @router.message(F.text.in_({"🕵️ Моя улика", "🕵️ Менің айғағым"}))
@@ -918,7 +893,13 @@ async def run_bot(token: str) -> None:
     try:
         me = await bot.get_me()
         BOT_RUNTIME.update(connected=True, username=me.username, error=None)
-        await build_dispatcher().start_polling(bot)
+        watchdog = asyncio.create_task(captain_election_watchdog(bot))
+        try:
+            await build_dispatcher().start_polling(bot)
+        finally:
+            watchdog.cancel()
+            with suppress(asyncio.CancelledError):
+                await watchdog
     except Exception as exc:
         BOT_RUNTIME.update(connected=False, error=f"{type(exc).__name__}: {exc}")
         raise

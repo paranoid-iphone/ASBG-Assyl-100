@@ -43,3 +43,7 @@ def ensure_schema_compatibility():
     if "capacity" not in team_columns:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE teams ADD COLUMN capacity INTEGER NOT NULL DEFAULT 10"))
+    election_columns = {column["name"] for column in inspect(engine).get_columns("captain_elections")}
+    if "expires_at" not in election_columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE captain_elections ADD COLUMN expires_at DATETIME"))
