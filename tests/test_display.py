@@ -20,6 +20,10 @@ def test_public_screen_and_state_api():
         page = client.get(f"/screen/{token}")
         state = client.get(f"/api/screen/{token}")
         assert page.status_code == 200
+        assert 'id="previousSlide"' in page.text
+        assert 'id="nextSlide"' in page.text
+        assert "ArrowRight" in page.text
+        assert "ArrowLeft" in page.text
         assert state.status_code == 200
         assert state.json()["event"] == "Screen test"
 

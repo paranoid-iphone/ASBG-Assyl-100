@@ -19,6 +19,7 @@ body{margin:0;background:#0c1220;color:#f8fafc;font-family:Inter,system-ui;overf
 .options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.7vw 2vw;max-width:82vw;margin:1.2vw auto 0;text-align:left;font-size:1.55vw;color:#dbe4f7}.option{padding:.55vw 1vw;border-left:3px solid #91a7ff;background:#ffffff0a;border-radius:4px}
 .hint{position:fixed;right:20px;bottom:16px;color:#ffffff88;font-size:13px}.volume{position:fixed;left:20px;bottom:14px;display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;background:#08101dcc;color:#d7deeb;font-size:13px;z-index:5}.volume input{width:150px;accent-color:#91a7ff}.volume output{min-width:38px;text-align:right;font-variant-numeric:tabular-nums}.busy{pointer-events:none}
 .timer-tools{position:fixed;right:20px;top:18px;display:none;gap:8px;z-index:6}.timer-tools.visible{display:flex}.timer-tools button,.music-toggle{border:1px solid #ffffff30;background:#08101ddd;color:#fff;border-radius:9px;padding:9px 12px;font-weight:750;cursor:pointer}.music-toggle{position:fixed;left:20px;top:18px;z-index:6}.music-toggle.active{background:#2945aa}
+.slide-nav{position:fixed;inset:50% 18px auto;display:flex;justify-content:space-between;transform:translateY(-50%);pointer-events:none;z-index:7}.slide-nav button{pointer-events:auto;width:54px;height:70px;border:1px solid #ffffff2b;border-radius:14px;background:#07101ac7;color:#fff;font-size:30px;cursor:pointer;opacity:.55}.slide-nav button:hover,.slide-nav button:focus-visible{opacity:1;background:#2945aa;outline:none}.slide-nav button:disabled{opacity:.18;cursor:wait}
 @media(max-aspect-ratio:1/1){.question{font-size:6vw}.event{font-size:10vw}.description{font-size:4vw}.timer{font-size:22vw}.answer{font-size:8vw}}
 </style>
 </head>
@@ -27,13 +28,15 @@ body{margin:0;background:#0c1220;color:#f8fafc;font-family:Inter,system-ui;overf
 <label id="volumeControl" class="volume">🔊 <input id="volume" type="range" min="0" max="100" step="1" value="55" aria-label="Громкость"><output id="volumeValue">55%</output></label>
 <button id="musicToggle" class="music-toggle">♫ Фоновая музыка</button>
 <div id="timerTools" class="timer-tools"><button data-adjust="-30">−30 сек.</button><button data-adjust="30">+30 сек.</button><button data-adjust="60">+1 мин.</button></div>
-<div class="hint">ЛКМ — продолжить · ПКМ — назад · F11 — полный экран</div>
+<div class="slide-nav"><button id="previousSlide" aria-label="Предыдущий слайд">←</button><button id="nextSlide" aria-label="Следующий слайд">→</button></div>
+<div class="hint">← → — навигация · ЛКМ — продолжить · ПКМ — назад · F11 — полный экран</div>
 <script>
 const app=document.getElementById('app');
 const volumeControl=document.getElementById('volumeControl');
 const volumeInput=document.getElementById('volume');
 const volumeValue=document.getElementById('volumeValue');
 const timerTools=document.getElementById('timerTools'),musicToggle=document.getElementById('musicToggle');
+const previousSlide=document.getElementById('previousSlide'),nextSlide=document.getElementById('nextSlide');
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state=null,busy=false,previousRemaining=null,gongPlayed=false,audioContext=null,musicTimer=null,musicStep=0;
 let masterVolume=Math.max(0,Math.min(1,Number(localStorage.getItem('screenVolume')??55)/100));
@@ -136,12 +139,12 @@ async function sync(){
   }catch(e){}
 }
 
-app.addEventListener('click',async()=>{
+async function advanceSlide(){
   if(busy||!state)return;
   if(state.mode==='DETECTIVE')return;
   if(!audioContext) audioContext=new (window.AudioContext||window.webkitAudioContext)();
   if(audioContext.state==='suspended') await audioContext.resume();
-  busy=true;app.classList.add('busy');
+  busy=true;app.classList.add('busy');previousSlide.disabled=nextSlide.disabled=true;
   try{
     const response=await fetch('/api/screen/{{ token }}/advance',{method:'POST'});
     if(!response.ok){
@@ -150,9 +153,23 @@ app.addEventListener('click',async()=>{
       return;
     }
     await sync();
-  }finally{busy=false;app.classList.remove('busy')}
+  }finally{busy=false;app.classList.remove('busy');previousSlide.disabled=nextSlide.disabled=false}
+}
+async function previousSlideAction(){
+  if(busy)return;busy=true;previousSlide.disabled=nextSlide.disabled=true;
+  try{const response=await fetch('/api/screen/{{ token }}/back',{method:'POST'});if(!response.ok){const error=await response.json().catch(()=>({detail:'Предыдущего слайда нет'}));alert(error.detail)}await sync()}
+  finally{busy=false;previousSlide.disabled=nextSlide.disabled=false}
+}
+app.addEventListener('click',advanceSlide);
+app.addEventListener('contextmenu',async event=>{event.preventDefault();await previousSlideAction()});
+previousSlide.addEventListener('click',async event=>{event.stopPropagation();await previousSlideAction()});
+nextSlide.addEventListener('click',async event=>{event.stopPropagation();await advanceSlide()});
+document.addEventListener('keydown',async event=>{
+  const target=event.target;
+  if(event.repeat||['INPUT','TEXTAREA','SELECT'].includes(target?.tagName)||target?.isContentEditable)return;
+  if(event.key==='ArrowRight'){event.preventDefault();await advanceSlide()}
+  if(event.key==='ArrowLeft'){event.preventDefault();await previousSlideAction()}
 });
-app.addEventListener('contextmenu',async event=>{event.preventDefault();if(busy)return;busy=true;try{const response=await fetch('/api/screen/{{ token }}/back',{method:'POST'});if(!response.ok){const error=await response.json().catch(()=>({detail:'Предыдущего слайда нет'}));alert(error.detail)}await sync()}finally{busy=false}});
 
 sync();setInterval(sync,500);
 </script>
