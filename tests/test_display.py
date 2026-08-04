@@ -53,3 +53,24 @@ def test_click_flow_question_timer_answer_next():
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "question"
         state = client.get(f"/api/screen/{token}").json()
         assert state["question"]["ru"]["title"] == "Q2"
+
+
+def test_ready_timers_at_zero_can_be_skipped_without_starting():
+    with SessionLocal() as db:
+        event = Event(name="Skip zero")
+        db.add(event); db.flush()
+        stage = Stage(event_id=event.id, title="Stage", position=1)
+        db.add(stage); db.flush()
+        db.add(Question(
+            stage_id=stage.id, title="Q", text="Question", correct_answer="Answer",
+            position=1, duration_seconds=30, submission_seconds=20,
+        ))
+        db.commit()
+        token = event.display_token
+    with TestClient(app) as client:
+        client.post(f"/api/screen/{token}/advance")
+        client.post(f"/api/screen/{token}/advance")
+        client.post(f"/api/screen/{token}/timer-adjust?seconds=-300")
+        assert client.post(f"/api/screen/{token}/advance").json()["action"] == "submission_ready"
+        client.post(f"/api/screen/{token}/timer-adjust?seconds=-300")
+        assert client.post(f"/api/screen/{token}/advance").json()["action"] == "answer"

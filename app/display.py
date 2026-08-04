@@ -307,8 +307,26 @@ async def advance_screen(token: str, db: Session = Depends(get_db)):
         db.commit()
         return {"action": "submission_ready", "question_id": current.id}
 
+    if event.display_mode in {"TIMER_READY", "TIMER_PAUSED"} and event.timer_duration_seconds <= 0:
+        push_screen_history(event)
+        event.timer_duration_seconds = current.submission_seconds
+        event.timer_started_at = None
+        event.display_mode = "SUBMISSION_READY"
+        db.commit()
+        return {"action": "submission_ready", "question_id": current.id}
+
+    if event.display_mode in {"SUBMISSION_READY", "SUBMISSION_PAUSED"} and event.timer_duration_seconds <= 0:
+        push_screen_history(event)
+        event.display_mode = "ANSWER"
+        event.timer_started_at = None
+        current.status = QuestionStatus.LOCKED
+        db.commit()
+        await notify_team_chats(db, event, current, "ANSWER")
+        return {"action": "answer", "question_id": current.id}
+
     if event.display_mode in {"TIMER_READY", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION_PAUSED"}:
-        raise HTTPException(409, "Сначала запустите или завершите текущий таймер")
+        phase = "приёма ответа" if event.display_mode.startswith("SUBMISSION") else "обсуждения"
+        raise HTTPException(409, f"Таймер {phase} ещё не запущен. Нажмите «Старт» или уменьшите время до нуля")
 
     if event.display_mode == "SUBMISSION":
         elapsed = (datetime.utcnow() - event.timer_started_at).total_seconds() if event.timer_started_at else 0

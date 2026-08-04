@@ -416,6 +416,10 @@ def live_control_state(
     detective_answered = len(detective_submissions)
     detective_total = len(teams)
     detective_can_finish = not detective_stage or remaining == 0 or detective_answered >= detective_total
+    timer_blocks_advance = (
+        event.display_mode in {"TIMER_READY", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION_PAUSED"}
+        and (remaining is None or remaining > 0)
+    )
     heartbeat = SCREEN_HEARTBEATS.get(event.id)
     heartbeat_age = int((datetime.utcnow() - heartbeat).total_seconds()) if heartbeat else None
     return {
@@ -453,9 +457,7 @@ def live_control_state(
         "current_index": current_index,
         "teams": teams,
         "next_label": next_labels.get(event.display_mode, "Продолжить"),
-        "can_advance": bool(program or question) and detective_can_finish and event.display_mode not in {
-            "TIMER_READY", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION_PAUSED"
-        } and not (
+        "can_advance": bool(program or question) and detective_can_finish and not timer_blocks_advance and not (
             event.display_mode in {"CAPTAIN_ELECTION_READY", "CAPTAIN_ELECTION_RUNNING"}
             and any(not team["captain"] for team in teams)
         ),
