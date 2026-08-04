@@ -136,6 +136,7 @@ class Stage(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     event_id: Mapped[int] = mapped_column(ForeignKey("games.id"))
+    system_key: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str] = mapped_column(Text, default="")
     title_kk: Mapped[str] = mapped_column(String(200), default="")

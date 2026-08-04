@@ -30,6 +30,7 @@ def ensure_schema_compatibility():
     """Add small backwards-compatible columns for existing local databases."""
     columns = {column["name"] for column in inspect(engine).get_columns("stages")}
     additions = {
+        "system_key": "VARCHAR(40)",
         "default_duration_seconds": "INTEGER NOT NULL DEFAULT 60",
         "default_submission_seconds": "INTEGER NOT NULL DEFAULT 20",
         "default_team_points": "FLOAT NOT NULL DEFAULT 5",

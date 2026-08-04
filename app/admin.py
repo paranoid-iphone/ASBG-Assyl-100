@@ -26,6 +26,7 @@ from .services import adjust_score, audit, grade_all_answers, grade_answer, lead
 from .runtime_state import CLUE_DELIVERY, CUSTOM_SLIDES, SCREEN_HEARTBEATS, SCREEN_HISTORY, TEAM_DELIVERY, TEMPORARY_SENDERS, mark_team_delivery
 from .public_url import public_base_url
 from .seed_game_content import seed_game_content_for_event
+from .fixed_program import ensure_fixed_program
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -191,6 +192,8 @@ def event_dashboard(
     db: Session = Depends(get_db), actor: str = Depends(admin_auth),
 ):
     event = require_event(db, event_id)
+    ensure_fixed_program(db, event)
+    db.commit()
     teams = db.scalars(select(Team).where(Team.event_id == event.id).order_by(Team.name)).all()
     players = db.scalars(select(Player).join(Team).where(Team.event_id == event.id).order_by(Team.name, Player.full_name)).all()
     pending_registrations = db.scalars(
