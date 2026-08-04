@@ -196,15 +196,6 @@ sync();setInterval(sync,1000);
 
 <section class="card actions-card">
   <details class="action-details">
-    <summary>＋ Добавить команду</summary>
-    <div class="form-panel"><form method="post" action="/admin/events/{{ event.id }}/teams">
-      <label>Название команды<input id="newTeamName" name="name" required placeholder="Например, Бірлік"></label>
-      <label>Код команды<input id="newTeamCode" name="code" placeholder="Сгенерируется автоматически"><span class="muted">Предпросмотр: <b id="teamCodePreview">BIRLIK</b></span></label>
-      <label>Количество мест<input type="number" name="capacity" value="10" min="1" max="100"></label>
-      <button>Создать команду</button>
-    </form></div>
-  </details>
-  <details class="action-details">
     <summary>＋ Добавить игрока</summary>
     <div class="form-panel"><form method="post" action="/admin/events/{{ event.id }}/players">
       <label>Команда<select name="team_id">{% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select></label>
@@ -216,7 +207,7 @@ sync();setInterval(sync,1000);
 </section>
 
 <section class="card">
-  <h2>Команды</h2>
+  <div class="people-toolbar"><div><h2>Команды</h2><div class="muted">Создавайте команды и затем распределяйте в них зарегистрированных участников.</div></div><details class="action-details"><summary>＋ Создать команду</summary><div class="form-panel"><form method="post" action="/admin/events/{{ event.id }}/teams"><label>Название команды<input id="newTeamName" name="name" required placeholder="Например, Бірлік"></label><label>Код команды<input id="newTeamCode" name="code" placeholder="Сгенерируется автоматически"><span class="muted">Предпросмотр: <b id="teamCodePreview">BIRLIK</b></span></label><label>Количество мест<input type="number" name="capacity" value="10" min="1" max="100"></label><button>Создать команду</button></form></div></details></div>
   <div class="team-grid">
   {% for t in teams %}
     {% set team_players = players|selectattr('team_id','equalto',t.id)|list %}
