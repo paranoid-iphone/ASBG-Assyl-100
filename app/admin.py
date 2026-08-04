@@ -413,6 +413,7 @@ def live_control_state(
         "ANSWER": "Показать ответы команд" if question and question.show_anonymous_answers else "Перейти дальше",
         "TEAM_ANSWERS": "Следующий вопрос или этап",
         "DETECTIVE": "Завершить детектив и перейти дальше",
+        "RESERVE_READY": "Запустить резервный раунд",
         "WELCOME": "Показать первый вопрос",
         "SLIDE": "Вернуться к игре",
     }
@@ -439,6 +440,7 @@ def live_control_state(
             "SUBMISSION_READY": "Таймер ответа готов", "SUBMISSION": "Приём ответов", "SUBMISSION_PAUSED": "Приём ответов на паузе",
             "ANSWER": "Правильный ответ",
             "TEAM_ANSWERS": "Ответы команд", "DETECTIVE": "Детективная игра",
+            "RESERVE_READY": "Решение о резервном раунде",
             "PAUSED": "Пауза",
             "SLIDE": "Служебный слайд",
         }.get(event.display_mode, event.display_mode),

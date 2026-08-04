@@ -35,9 +35,9 @@ def test_fixed_program_preserves_existing_questions_and_is_idempotent():
 
         assert first.id == second.id
         assert legacy_stage.system_key == "what"
-        assert db.scalar(select(func.count(Stage.id)).where(Stage.event_id == event.id)) == 6
+        assert db.scalar(select(func.count(Stage.id)).where(Stage.event_id == event.id)) == 7
         assert db.scalar(select(func.count(GameProgram.id)).where(GameProgram.event_id == event.id)) == 1
-        assert db.scalar(select(func.count(GameProgramStage.id)).where(GameProgramStage.program_id == first.id)) == 6
+        assert db.scalar(select(func.count(GameProgramStage.id)).where(GameProgramStage.program_id == first.id)) == 7
         assert db.scalar(select(func.count(Question.id)).where(Question.stage_id == legacy_stage.id)) == 1
 
 

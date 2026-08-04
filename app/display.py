@@ -258,6 +258,15 @@ async def advance_screen(token: str, db: Session = Depends(get_db)):
             raise HTTPException(409, "В игре нет вопросов или детективного этапа")
         push_screen_history(event)
         return await activate_program_item(db, event, items[0])
+    if event.display_mode == "RESERVE_READY":
+        items = ordered_program_items(db, event.id)
+        reserve_item = next((item for item in items if (
+            item[0] == "question" and item[1].stage.system_key == "reserve"
+        )), None)
+        if not reserve_item:
+            raise HTTPException(409, "В резервном раунде пока нет вопросов")
+        push_screen_history(event)
+        return await activate_program_item(db, event, reserve_item)
     if event.display_mode == "DETECTIVE":
         stage = db.get(Stage, event.current_detective_stage_id) if event.current_detective_stage_id else None
         if not stage:
@@ -485,4 +494,20 @@ async def next_question(
         event.timer_started_at = None
         db.commit()
         return {"action": "finished"}
-    return await activate_program_item(db, event, items[current_index + 1])
+    next_item = items[current_index + 1]
+    completed_stage_key = None
+    if completed_kind == "question" and completed_id:
+        completed_question = db.get(Question, completed_id)
+        completed_stage_key = completed_question.stage.system_key if completed_question else None
+    if (
+        next_item[0] == "question"
+        and next_item[1].stage.system_key == "reserve"
+        and completed_stage_key != "reserve"
+    ):
+        event.display_mode = "RESERVE_READY"
+        event.current_question_id = None
+        event.current_detective_stage_id = None
+        event.timer_started_at = None
+        db.commit()
+        return {"action": "reserve_ready", "stage_id": next_item[1].stage_id}
+    return await activate_program_item(db, event, next_item)

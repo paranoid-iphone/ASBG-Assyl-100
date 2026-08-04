@@ -30,11 +30,11 @@
       <div class="stage-body">
         <header class="stage-head">
           <div>
-            <div class="stage-type">{{ {'test':'Тренировка','what':'Этап 1 · блок «Что?»','where':'Этап 1 · блок «Где?»','when':'Этап 1 · блок «Когда?»','choice':'Этап 2 · выбор варианта','detective':'Этап 3 · детектив'}.get(s.system_key, 'Этап программы') }}</div>
+            <div class="stage-type">{{ {'test':'Тренировка','what':'Этап 1 · блок «Что?»','where':'Этап 1 · блок «Где?»','when':'Этап 1 · блок «Когда?»','choice':'Этап 2 · выбор варианта','detective':'Этап 3 · детектив','reserve':'Необязательный блок · только если осталось время'}.get(s.system_key, 'Этап программы') }}</div>
             <h3>{{ s.title }}{% if s.title_kk %}<small> / {{ s.title_kk }}</small>{% endif %}</h3>
             {% if s.description %}<p class="muted">{{ s.description }}</p>{% endif %}
           </div>
-          {% if s.stage_type.value=='QUIZ' %}<span class="question-total">{{ s.questions|length }} вопросов</span>{% else %}<span class="badge warn">{{ s.detective_duration_seconds // 60 }} мин.</span>{% endif %}
+          {% if s.system_key=='reserve' %}<span class="badge warn">Резерв · {{ s.questions|length }} вопросов</span>{% elif s.stage_type.value=='QUIZ' %}<span class="question-total">{{ s.questions|length }} вопросов</span>{% else %}<span class="badge warn">{{ s.detective_duration_seconds // 60 }} мин.</span>{% endif %}
         </header>
         <div class="detective-actions"><form method="post" action="/admin/events/{{ event.id }}/stages/{{ s.id }}/launch" onsubmit="return confirm('Запустить только этап «{{ s.title }}»?')"><button class="green">Запустить только этот этап</button></form></div>
 

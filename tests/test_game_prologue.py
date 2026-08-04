@@ -34,3 +34,30 @@ def test_program_starts_with_intro_then_captain_stage_and_rules():
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "captain_election_complete"
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "rules"
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "question"
+
+
+def test_reserve_stage_requires_an_explicit_decision():
+    with SessionLocal() as db:
+        event = Event(name="Reserve", display_mode="ANSWER")
+        db.add(event); db.flush()
+        main = Stage(event_id=event.id, title="Main", position=1, system_key="what")
+        reserve = Stage(event_id=event.id, title="Reserve", position=2, system_key="reserve")
+        db.add_all([main, reserve]); db.flush()
+        main_question = Question(stage_id=main.id, title="Q1", text="Question", correct_answer="Answer", position=1)
+        reserve_question = Question(stage_id=reserve.id, title="Extra", text="Extra question", correct_answer="Extra answer", position=1)
+        program = GameProgram(event_id=event.id, title="Main", status="RUNNING")
+        db.add_all([main_question, reserve_question, program]); db.flush()
+        db.add_all([
+            GameProgramStage(program_id=program.id, stage_id=main.id, position=1),
+            GameProgramStage(program_id=program.id, stage_id=reserve.id, position=2),
+        ])
+        event.current_question_id = main_question.id
+        db.commit()
+        token, reserve_question_id = event.display_token, reserve_question.id
+
+    with TestClient(app) as client:
+        response = client.post(f"/api/screen/{token}/next")
+        assert response.status_code == 200
+        assert response.json()["action"] == "reserve_ready"
+        assert client.get(f"/api/screen/{token}").json()["mode"] == "RESERVE_READY"
+        assert client.post(f"/api/screen/{token}/advance").json()["question_id"] == reserve_question_id
