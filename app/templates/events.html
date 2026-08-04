@@ -1,0 +1,16 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>Ивенты · Игровой штаб</title><style>
+*{box-sizing:border-box}body{margin:0;background:#f4f6fb;color:#172033;font:15px Inter,system-ui}.wrap{max-width:1180px;margin:auto;padding:36px 24px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:30px}h1{margin:0;font-size:30px}.sub{color:#697386;margin-top:6px}
+.layout{display:grid;grid-template-columns:1fr 340px;gap:24px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+.card{background:#fff;border:1px solid #e2e7f0;border-radius:14px;padding:20px;box-shadow:0 6px 24px #1e293b0a}.event{color:inherit;text-decoration:none;transition:.15s}.event:hover{transform:translateY(-2px);border-color:#91a7ff}
+.date{font-size:12px;color:#637083;text-transform:uppercase;letter-spacing:.07em}.event h2{font-size:19px;margin:11px 0 7px}.metrics{display:flex;gap:18px;margin-top:20px;color:#637083}.metrics b{color:#172033}
+form{display:grid;gap:12px}label{display:grid;gap:6px;font-size:13px;color:#4b5563}input,textarea,button{font:inherit;padding:10px;border:1px solid #ccd4e0;border-radius:8px}textarea{min-height:85px}
+button{border:0;background:#3457d5;color:#fff;font-weight:700;cursor:pointer}@media(max-width:800px){.layout{grid-template-columns:1fr}.wrap{padding:22px 16px}}
+</style></head><body><div class="wrap"><header><div><h1>Ивенты</h1><div class="sub">Выберите существующий ивент или создайте новый</div></div></header>
+<div class="layout"><main><div class="grid">{% for event in events %}<a class="card event" href="/admin/events/{{ event.id }}">
+<div class="date">{{ event.event_date.strftime('%d.%m.%Y') if event.event_date else 'Дата не указана' }}</div><h2>{{ event.name }}</h2><div class="sub">{{ event.description or 'Без описания' }}</div>
+<div class="metrics"><span><b>{{ stats[event.id].teams }}</b> команд</span><span><b>{{ stats[event.id].players }}</b> игроков</span></div></a>{% else %}<div class="card">Пока нет ни одного ивента.</div>{% endfor %}</div></main>
+<aside class="card"><h2>Настройка мероприятия</h2><form method="post" action="/admin/events"><label>Название<input name="name" required placeholder="Корпоративная игра"></label>
+<label>Дата<input type="date" name="event_date"></label><label>Описание<textarea name="description" placeholder="Короткое описание"></textarea></label><button>Создать и открыть</button><div class="sub">Новое мероприятие автоматически становится активным для регистрации в Telegram.</div></form></aside>
+</div></div></body></html>

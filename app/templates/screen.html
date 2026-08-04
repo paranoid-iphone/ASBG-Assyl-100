@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>Большой экран</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0c1220;color:#f8fafc;font-family:Inter,system-ui;overflow:hidden}
+.screen{height:100vh;display:flex;flex-direction:column;align-items:center;text-align:center;padding:5vh 6vw;cursor:pointer;user-select:none;background:radial-gradient(circle at 85% 15%,#243b80 0,transparent 35%),linear-gradient(145deg,#0c1220,#121b31)}
+.center{flex:1;width:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
+.eyebrow,.question-title,.answer-label{text-transform:uppercase;letter-spacing:.18em;color:#91a7ff;font-size:1.3vw;font-weight:800}
+.event{font-size:6vw;line-height:1.02;margin:.15em 0}.description{font-size:2vw;color:#b7c2d8;max-width:70vw}
+.question{font-size:3.8vw;line-height:1.18;max-width:88vw;margin:.35em auto}
+.bilingual{display:grid;grid-template-columns:1fr 1fr;gap:4vw;width:100%;align-items:center}.language-block{padding:1vw 2vw}.language-block+.language-block{border-left:1px solid #ffffff28}.lang{font-size:1vw;color:#91a7ff;text-transform:uppercase;letter-spacing:.15em;font-weight:800;margin-bottom:1.2vw}.bilingual .question{font-size:2.7vw}.bilingual .answer{font-size:3.5vw}.bilingual .explanation{font-size:1.4vw}
+.timer{font-size:15vw;line-height:1;font-weight:900;font-variant-numeric:tabular-nums;color:#fff}.timer.danger{color:#ff6b6b}
+.answer{font-size:5vw;font-weight:850;margin:.2em 0;color:#7ee7b7;max-width:88vw}.explanation{font-size:1.8vw;color:#c5cee0;max-width:80vw}
+.answer-wall{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.2vw;width:min(1200px,90vw);max-height:72vh;overflow:hidden}.answer-card{background:#ffffff12;border:1px solid #ffffff24;border-radius:16px;padding:1.2vw 1.5vw;font-size:1.65vw;text-align:left}.answer-card small{display:block;color:#aeb8ca;margin-top:.5vw}
+.options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.7vw 2vw;max-width:82vw;margin:1.2vw auto 0;text-align:left;font-size:1.55vw;color:#dbe4f7}.option{padding:.55vw 1vw;border-left:3px solid #91a7ff;background:#ffffff0a;border-radius:4px}
+.hint{position:fixed;right:20px;bottom:16px;color:#ffffff88;font-size:13px}.volume{position:fixed;left:20px;bottom:14px;display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;background:#08101dcc;color:#d7deeb;font-size:13px;z-index:5}.volume input{width:150px;accent-color:#91a7ff}.volume output{min-width:38px;text-align:right;font-variant-numeric:tabular-nums}.busy{pointer-events:none}
+.timer-tools{position:fixed;right:20px;top:18px;display:none;gap:8px;z-index:6}.timer-tools.visible{display:flex}.timer-tools button,.music-toggle{border:1px solid #ffffff30;background:#08101ddd;color:#fff;border-radius:9px;padding:9px 12px;font-weight:750;cursor:pointer}.music-toggle{position:fixed;left:20px;top:18px;z-index:6}.music-toggle.active{background:#2945aa}
+@media(max-aspect-ratio:1/1){.question{font-size:6vw}.event{font-size:10vw}.description{font-size:4vw}.timer{font-size:22vw}.answer{font-size:8vw}}
+</style>
+</head>
+<body>
+<div id="app" class="screen"><div class="center"><div class="event">Подключение…</div></div></div>
+<label id="volumeControl" class="volume">🔊 <input id="volume" type="range" min="0" max="100" step="1" value="55" aria-label="Громкость"><output id="volumeValue">55%</output></label>
+<button id="musicToggle" class="music-toggle">♫ Фоновая музыка</button>
+<div id="timerTools" class="timer-tools"><button data-adjust="-30">−30 сек.</button><button data-adjust="30">+30 сек.</button><button data-adjust="60">+1 мин.</button></div>
+<div class="hint">ЛКМ — продолжить · ПКМ — назад · F11 — полный экран</div>
+<script>
+const app=document.getElementById('app');
+const volumeControl=document.getElementById('volumeControl');
+const volumeInput=document.getElementById('volume');
+const volumeValue=document.getElementById('volumeValue');
+const timerTools=document.getElementById('timerTools'),musicToggle=document.getElementById('musicToggle');
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let state=null,busy=false,previousRemaining=null,gongPlayed=false,audioContext=null,musicTimer=null,musicStep=0;
+let masterVolume=Math.max(0,Math.min(1,Number(localStorage.getItem('screenVolume')??55)/100));
+const volumeGain=()=>masterVolume*masterVolume;
+volumeInput.value=String(Math.round(masterVolume*100));volumeValue.value=`${volumeInput.value}%`;
+volumeControl.addEventListener('click',event=>event.stopPropagation());
+volumeControl.addEventListener('pointerdown',event=>event.stopPropagation());
+volumeInput.addEventListener('input',event=>{masterVolume=Number(event.target.value)/100;volumeValue.value=`${event.target.value}%`;localStorage.setItem('screenVolume',event.target.value)});
+
+function render(d){
+  const q=d.question||{},ru=q.ru||{},kk=q.kk||{};let html='';
+  const block=(lang,data,type)=>{
+    const main=type==='answer'?data.answer:data.text;
+    const extra=type==='answer'?data.explanation:'';
+    return `<div class="language-block"><div class="lang">${lang}</div><div class="${type}">${esc(main||'')}</div>${extra?`<div class="explanation">${esc(extra)}</div>`:''}</div>`;
+  };
+  if(d.mode==='WELCOME'){
+    html=`<div class="eyebrow">Интеллектуальная игра</div><div class="center"><div class="event">${esc(d.event)}</div><div class="description">${esc(d.description)}</div></div>`;
+  }else if(d.mode==='SLIDE'){
+    const slide=d.slide||{};const title=d.display_language==='KK'&&slide.title_kk?slide.title_kk:slide.title;const text=d.display_language==='KK'&&slide.text_kk?slide.text_kk:slide.text;
+    if(d.display_language==='BOTH'&&slide.title_kk)html=`<div class="eyebrow">Интеллектуальная игра / Зияткерлік ойын</div><div class="center"><div class="bilingual"><div class="language-block"><div class="lang">Русский</div><div class="event" style="font-size:3.5vw">${esc(slide.title)}</div><div class="description" style="font-size:1.5vw">${esc(slide.text||'')}</div></div><div class="language-block"><div class="lang">Қазақша</div><div class="event" style="font-size:3.5vw">${esc(slide.title_kk)}</div><div class="description" style="font-size:1.5vw">${esc(slide.text_kk||'')}</div></div></div></div>`;
+    else html=`<div class="eyebrow">Интеллектуальная игра</div><div class="center"><div class="event" style="font-size:5vw">${esc(title||'Продолжаем игру')}</div><div class="description">${esc(text||'')}</div></div>`;
+  }else if(d.mode==='DETECTIVE'){
+    const game=d.detective||{};
+    const time=d.timer.remaining===null?'--:--':`${String(Math.floor(d.timer.remaining/60)).padStart(2,'0')}:${String(d.timer.remaining%60).padStart(2,'0')}`;
+    const title=d.display_language==='KK'&&game.title_kk?game.title_kk:game.title_ru;
+    const rules=d.display_language==='KK'&&game.rules_kk?game.rules_kk:game.rules_ru;
+    html=`<div class="eyebrow">Детективная игра / Детектив ойыны</div><div class="center"><div class="event" style="font-size:4vw">${esc(title||'Расследование')}</div><div class="description">${esc(rules||'')}</div><div class="timer ${d.timer.remaining<=10?'danger':''}" style="font-size:9vw;margin-top:.25em">${time}</div><div class="description">Ответили: ${game.answered||0} из ${game.total||0} команд</div></div>`;
+  }else if((d.mode==='TIMER'||d.mode==='SUBMISSION')&&d.timer.remaining!==null){
+    const time=`${String(Math.floor(d.timer.remaining/60)).padStart(2,'0')}:${String(d.timer.remaining%60).padStart(2,'0')}`;
+    const label=d.mode==='SUBMISSION'?'Капитаны, отправьте ответы / Капитандар, жауап жіберіңіз':'Обсуждение / Талқылау';
+    html=`<div class="eyebrow">${label}</div><div class="center"><div class="timer ${d.timer.remaining<=10?'danger':''}">${time}</div></div>`;
+  }else if(d.mode==='QUESTION'){
+    const options=(q.options||[]).map((item,index)=>`<div class="option">${index+1}. ${esc(item)}</div>`).join('');
+    if(d.display_language==='BOTH'&&ru.text&&kk.text) html=`<div class="center"><div class="bilingual">${block('Русский',ru,'question')}${block('Қазақша',kk,'question')}</div>${options?`<div class="options">${options}</div>`:''}</div>`;
+    else{const data=d.display_language==='KK'&&kk.text?kk:ru;html=`<div class="question-title">${esc(data.title||'Вопрос')}</div><div class="center"><div class="question">${esc(data.text||'Ожидаем вопрос')}</div>${options?`<div class="options">${options}</div>`:''}</div>`}
+  }else if(d.mode==='ANSWER'){
+    if(d.display_language==='BOTH'&&ru.answer&&kk.answer) html=`<div class="answer-label">Ответ / Жауап</div><div class="center"><div class="bilingual">${block('Русский',ru,'answer')}${block('Қазақша',kk,'answer')}</div></div>`;
+    else{const data=d.display_language==='KK'&&kk.answer?kk:ru;html=`<div class="answer-label">${d.display_language==='KK'?'Дұрыс жауап':'Правильный ответ'}</div><div class="center"><div class="answer">${esc(data.answer||'')}</div><div class="explanation">${esc(data.explanation||'')}</div></div>`}
+  }else if(d.mode==='TEAM_ANSWERS'){
+    const cards=(d.anonymous_answers||[]).map(a=>`<div class="answer-card">${esc(a.text)}${a.explanation?`<small>${esc(a.explanation)}</small>`:''}</div>`).join('');
+    html=`<div class="answer-label">Версии команд / Командалардың нұсқалары</div><div class="center">${cards?`<div class="answer-wall">${cards}</div>`:'<div class="description">Команды не успели отправить ответы</div>'}</div>`;
+  }else{
+    html=`<div class="center"><div class="event">${esc(d.event)}</div></div>`;
+  }
+  app.innerHTML=html;
+  timerTools.classList.toggle('visible',['TIMER','SUBMISSION','DETECTIVE'].includes(d.mode));
+}
+
+function ensureAudio(){if(!audioContext)audioContext=new (window.AudioContext||window.webkitAudioContext)();if(audioContext.state==='suspended')audioContext.resume()}
+function musicPulse(){if(!audioContext)return;const chords=[[130.81,196,261.63],[146.83,220,293.66],[123.47,185,246.94],[110,164.81,220]];const now=audioContext.currentTime;chords[musicStep++%chords.length].forEach((frequency,index)=>{const oscillator=audioContext.createOscillator(),gain=audioContext.createGain();oscillator.type=index?'sine':'triangle';oscillator.frequency.value=frequency;gain.gain.setValueAtTime(.0001,now);gain.gain.exponentialRampToValueAtTime(Math.max(.0001,volumeGain()*.045/(index+1)),now+.15);gain.gain.exponentialRampToValueAtTime(.0001,now+1.8);oscillator.connect(gain).connect(audioContext.destination);oscillator.start(now);oscillator.stop(now+1.9)})}
+function toggleMusic(){ensureAudio();if(musicTimer){clearInterval(musicTimer);musicTimer=null;musicToggle.classList.remove('active');musicToggle.textContent='♫ Фоновая музыка'}else{musicPulse();musicTimer=setInterval(musicPulse,1800);musicToggle.classList.add('active');musicToggle.textContent='■ Остановить музыку'}}
+musicToggle.addEventListener('click',event=>{event.stopPropagation();toggleMusic()});
+timerTools.addEventListener('click',async event=>{event.stopPropagation();const seconds=event.target.dataset.adjust;if(!seconds)return;const response=await fetch(`/api/screen/{{ token }}/timer-adjust?seconds=${seconds}`,{method:'POST'});if(!response.ok){const error=await response.json();alert(error.detail||'Не удалось изменить таймер')}await sync()});
+
+function playGong(){
+  if(!audioContext) audioContext=new (window.AudioContext||window.webkitAudioContext)();
+  const now=audioContext.currentTime;
+  [196,293.66,392].forEach((frequency,index)=>{
+    const oscillator=audioContext.createOscillator();
+    const gain=audioContext.createGain();
+    oscillator.type='sine';
+    oscillator.frequency.setValueAtTime(frequency,now);
+    gain.gain.setValueAtTime(.0001,now);
+    gain.gain.exponentialRampToValueAtTime(Math.max(.0001,volumeGain()*.75/(index+1)),now+.02);
+    gain.gain.exponentialRampToValueAtTime(.0001,now+2.6);
+    oscillator.connect(gain).connect(audioContext.destination);
+    oscillator.start(now);
+    oscillator.stop(now+2.7);
+  });
+}
+
+function playTick(urgent){
+  if(!audioContext) return;
+  const now=audioContext.currentTime;
+  const oscillator=audioContext.createOscillator();
+  const gain=audioContext.createGain();
+  oscillator.type='square';
+  oscillator.frequency.setValueAtTime(urgent?1100:850,now);
+  gain.gain.setValueAtTime(Math.max(.0001,volumeGain()*(urgent?.22:.10)),now);
+  gain.gain.exponentialRampToValueAtTime(.0001,now+.055);
+  oscillator.connect(gain).connect(audioContext.destination);
+  oscillator.start(now);
+  oscillator.stop(now+.06);
+}
+
+async function sync(){
+  try{
+    const response=await fetch('/api/screen/{{ token }}',{cache:'no-store'});
+    const next=await response.json();
+    if(next.timer_sound_enabled&&previousRemaining!==null&&next.timer.remaining!==null&&next.timer.remaining>0&&next.timer.remaining!==previousRemaining){
+      playTick(next.timer.remaining<=10);
+    }
+    if(next.timer_sound_enabled&&previousRemaining!==null&&previousRemaining>0&&next.timer.remaining===0&&!gongPlayed){
+      playGong();gongPlayed=true;
+    }
+    if(next.timer.remaining===null||next.timer.remaining>0) gongPlayed=false;
+    previousRemaining=next.timer.remaining;
+    state=next;render(state);
+  }catch(e){}
+}
+
+app.addEventListener('click',async()=>{
+  if(busy||!state)return;
+  if(state.mode==='DETECTIVE')return;
+  if(!audioContext) audioContext=new (window.AudioContext||window.webkitAudioContext)();
+  if(audioContext.state==='suspended') await audioContext.resume();
+  busy=true;app.classList.add('busy');
+  try{
+    const response=await fetch('/api/screen/{{ token }}/advance',{method:'POST'});
+    if(!response.ok){
+      const error=await response.json().catch(()=>({detail:'Не удалось начать игру'}));
+      alert(error.detail||'Не удалось начать игру');
+      return;
+    }
+    await sync();
+  }finally{busy=false;app.classList.remove('busy')}
+});
+app.addEventListener('contextmenu',async event=>{event.preventDefault();if(busy)return;busy=true;try{const response=await fetch('/api/screen/{{ token }}/back',{method:'POST'});if(!response.ok){const error=await response.json().catch(()=>({detail:'Предыдущего слайда нет'}));alert(error.detail)}await sync()}finally{busy=false}});
+
+sync();setInterval(sync,500);
+</script>
+</body>
+</html>

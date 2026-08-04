@@ -1,0 +1,210 @@
+<div class="builder-intro">
+  <div>
+    <div class="eyebrow">КОНСТРУКТОР ПРОГРАММЫ</div>
+    <h2>Игры, этапы и вопросы</h2>
+    <p>Сначала создайте игру, затем добавляйте в неё этапы. В обычном этапе можно смешивать вопросы с текстовым ответом и вопросы с выбором варианта.</p>
+  </div>
+  <details class="create-popover">
+    <summary>＋ Новая игра</summary>
+    <form method="post" action="/admin/events/{{ event.id }}/programs" class="stack-form">
+      <label>Название игры<input name="title" required placeholder="Основная интеллектуальная игра"></label>
+      <label>Описание<textarea name="description" placeholder="Короткая заметка для организаторов"></textarea></label>
+      <button>Создать игру</button>
+    </form>
+  </details>
+</div>
+
+{% for program in programs %}
+<section class="program-card">
+  <header class="program-head">
+    <div class="program-number">{{ loop.index }}</div>
+    <div class="program-title">
+      <div class="eyebrow">ИГРА</div>
+      <h2>{{ program.title }}</h2>
+      {% if program.description %}<p>{{ program.description }}</p>{% endif %}
+    </div>
+    <div class="program-summary">
+      <span class="badge {{ 'good' if program.status=='RUNNING' else ('warn' if program.status=='FINISHED' else 'role') }}">{{ 'Запущена' if program.status=='RUNNING' else ('Завершена' if program.status=='FINISHED' else 'Черновик') }}</span>
+      <span>{{ program.stage_links|length }} этапов</span>
+      <span>{{ program_question_counts[program.id] }} вопросов</span>
+    </div>
+  </header>
+
+  <div class="stage-timeline">
+  {% for link in program.stage_links %}
+    {% set s = link.stage %}
+    <article class="stage-block {{ 'detective-stage' if s.stage_type.value=='DETECTIVE' else '' }}">
+      <div class="stage-rail"><span>{{ link.position }}</span></div>
+      <div class="stage-body">
+        <header class="stage-head">
+          <div>
+            <div class="stage-type">{{ 'Детективная игра' if s.stage_type.value=='DETECTIVE' else 'Этап с вопросами' }}</div>
+            <h3>{{ s.title }}{% if s.title_kk %}<small> / {{ s.title_kk }}</small>{% endif %}</h3>
+            {% if s.description %}<p class="muted">{{ s.description }}</p>{% endif %}
+          </div>
+          {% if s.stage_type.value=='QUIZ' %}<span class="question-total">{{ s.questions|length }} вопросов</span>{% else %}<span class="badge warn">{{ s.detective_duration_seconds // 60 }} мин.</span>{% endif %}
+        </header>
+        <div class="detective-actions"><form method="post" action="/admin/events/{{ event.id }}/stages/{{ s.id }}/launch" onsubmit="return confirm('Запустить только этап «{{ s.title }}»?')"><button class="green">Запустить только этот этап</button></form></div>
+
+        <details class="stage-edit">
+          <summary>Редактировать этап</summary>
+          <form method="post" action="/admin/events/{{ event.id }}/stages/{{ s.id }}/edit">
+            <label>Название RU<input name="title" value="{{ s.title }}" required></label>
+            <label>Название KZ<input name="title_kk" value="{{ s.title_kk }}"></label>
+            <label>Описание RU<input name="description" value="{{ s.description }}"></label>
+            <label>Описание KZ<input name="description_kk" value="{{ s.description_kk }}"></label>
+            {% if s.stage_type.value=='DETECTIVE' %}
+            {% set detective_scores = s.detective_points.split(',') %}
+            <label>Продолжительность, сек.<input type="number" name="detective_duration_seconds" value="{{ s.detective_duration_seconds }}" min="60" max="7200"></label>
+            <div class="score-editor">
+              <div class="score-title">Баллы за правильный ответ по скорости</div>
+              {% for place in range(1,7) %}<label><span>{{ place }}-е место{% if place==6 %} и далее{% endif %}</span><input type="number" step=".5" min="0" name="detective_point_{{ place }}" value="{{ detective_scores[place-1]|trim if detective_scores|length >= place else 0 }}"></label>{% endfor %}
+            </div>
+            {% endif %}
+            <button>Сохранить этап</button>
+          </form>
+        </details>
+
+        {% if s.stage_type.value=='QUIZ' %}
+          <details class="stage-defaults">
+            <summary>Настройки этапа <span>{{ s.default_duration_seconds }} сек. · {{ s.default_team_points }} баллов за вопрос</span></summary>
+            <form method="post" action="/admin/events/{{ event.id }}/stages/{{ s.id }}/defaults">
+              <label>Время обсуждения, сек.<input type="number" name="default_duration_seconds" value="{{ s.default_duration_seconds }}" min="5" max="3600" required></label>
+              <label>Время на отправку, сек.<input type="number" name="default_submission_seconds" value="{{ s.default_submission_seconds }}" min="5" max="300" required></label>
+              <label>Баллы за вопрос<input type="number" step=".5" name="default_team_points" value="{{ s.default_team_points }}" min="0" max="10000" required></label>
+              <label class="apply-all"><input type="checkbox" name="apply_to_all"> применить ко всем существующим вопросам этапа</label>
+              <button>Сохранить настройки этапа</button>
+            </form>
+            <p class="muted">Без галочки значения будут подставляться только в новые вопросы.</p>
+          </details>
+          <div class="question-list">
+          {% for q in s.questions %}
+            <details class="question-row">
+              <summary>
+                <span class="q-index">{{ q.position }}</span>
+                <span class="q-main"><b>{{ q.title }}</b><small>{{ q.text|truncate(115) }}</small></span>
+                <span class="format-chip {{ 'choice' if q.question_type.value!='TEXT' else '' }}">{{ 'Выбор варианта' if q.question_type.value!='TEXT' else 'Текстовый ответ' }}</span>
+                <span class="q-meta">{{ q.duration_seconds }} сек. · {{ q.team_points }} б.</span>
+                <span class="chevron">⌄</span>
+              </summary>
+              <div class="question-detail">
+                <div class="answer-preview"><span>Правильный ответ</span><b>{{ q.correct_answer }}</b></div>
+                <form method="post" action="/admin/events/{{ event.id }}/questions/{{ q.id }}/edit" class="question-form">
+                  <div class="language-columns">
+                    <div><h4>Русский</h4><label>Название<input name="title" value="{{ q.title }}" required></label><label>Текст вопроса<textarea name="text" required>{{ q.text }}</textarea></label><label>Правильный ответ<input name="correct_answer" value="{{ q.correct_answer }}" required></label><label>Пояснение<textarea name="explanation">{{ q.explanation }}</textarea></label></div>
+                    <div><h4>Қазақша</h4><label>Атауы<input name="title_kk" value="{{ q.title_kk }}"></label><label>Сұрақ мәтіні<textarea name="text_kk">{{ q.text_kk }}</textarea></label><label>Дұрыс жауап<input name="correct_answer_kk" value="{{ q.correct_answer_kk }}"></label><label>Түсіндірме<textarea name="explanation_kk">{{ q.explanation_kk }}</textarea></label></div>
+                  </div>
+                  <div class="settings-strip">
+                    <label>Формат<select name="question_type"><option value="TEXT" {% if q.question_type.value=='TEXT' %}selected{% endif %}>Написать ответ</option><option value="CHOICE" {% if q.question_type.value=='CHOICE' %}selected{% endif %}>Выбрать один вариант</option><option value="CHOICE_EXPLANATION" {% if q.question_type.value=='CHOICE_EXPLANATION' %}selected{% endif %}>Вариант + пояснение</option></select></label>
+                    <label class="wide-setting">Варианты, каждый с новой строки<textarea name="options_text">{{ question_options[q.id] }}</textarea></label>
+                    <label>Обсуждение<input type="number" name="duration_seconds" value="{{ q.duration_seconds }}" min="5" max="3600"></label>
+                    <label>Отправка<input type="number" name="submission_seconds" value="{{ q.submission_seconds }}" min="5" max="300"></label>
+                    <label>Баллы<input type="number" step=".5" name="team_points" value="{{ q.team_points }}" min="0"></label>
+                  </div>
+                  <input type="hidden" name="team_answers_enabled" value="on"><input type="hidden" name="show_anonymous_answers" value="on">
+                  <button>Сохранить изменения</button>
+                </form>
+                <form method="post" action="/admin/events/{{ event.id }}/questions/{{ q.id }}/delete" onsubmit="return confirm('Удалить вопрос и ответы на него?')"><button class="link-danger">Удалить вопрос</button></form>
+              </div>
+            </details>
+          {% else %}<div class="empty-inline">В этом этапе пока нет вопросов.</div>{% endfor %}
+          </div>
+
+          <details class="add-question">
+            <summary>＋ Добавить вопрос</summary>
+            <form method="post" action="/admin/events/{{ event.id }}/questions" class="question-form">
+              <input type="hidden" name="stage_id" value="{{ s.id }}">
+              <div class="language-columns">
+                <div><h4>Русский</h4><label>Название<input name="title" required placeholder="Вопрос 1"></label><label>Текст вопроса<textarea name="text" required></textarea></label><label>Правильный ответ<input name="correct_answer" required></label><label>Пояснение<textarea name="explanation"></textarea></label></div>
+                <div><h4>Қазақша</h4><label>Атауы<input name="title_kk"></label><label>Сұрақ мәтіні<textarea name="text_kk"></textarea></label><label>Дұрыс жауап<input name="correct_answer_kk"></label><label>Түсіндірме<textarea name="explanation_kk"></textarea></label></div>
+              </div>
+              <div class="settings-strip">
+                <label>Как отвечает команда?<select name="question_type"><option value="TEXT">Пишет ответ</option><option value="CHOICE">Выбирает один вариант</option><option value="CHOICE_EXPLANATION">Выбирает вариант и поясняет</option></select></label>
+                <label class="wide-setting">Варианты ответа, каждый с новой строки<textarea name="options_text" placeholder="Вариант 1&#10;Вариант 2&#10;Вариант 3"></textarea></label>
+                <label>Обсуждение, сек.<input type="number" name="duration_seconds" value="{{ s.default_duration_seconds }}" min="5" max="3600"></label>
+                <label>Отправка, сек.<input type="number" name="submission_seconds" value="{{ s.default_submission_seconds }}" min="5" max="300"></label>
+                <label>Баллы<input type="number" step=".5" min="0" name="team_points" value="{{ s.default_team_points }}"></label>
+              </div>
+              <input type="hidden" name="personal_points" value="0"><input type="hidden" name="team_answers_enabled" value="on"><input type="hidden" name="show_anonymous_answers" value="on">
+              <button>Добавить вопрос</button>
+            </form>
+          </details>
+        {% else %}
+          <div class="detective-control">
+            <div class="detective-note"><div class="detective-icon">⌕</div><div><b>Отдельный кейс для каждой команды</b><p>Улики создаются по числу участников, капитан отправляет один окончательный ответ.</p></div><span class="badge {{ 'good' if s.detective_status.value=='RUNNING' else ('warn' if s.detective_status.value=='READY' else 'role') }}">{{ {'DRAFT':'Нужно создать кейсы','READY':'Кейсы готовы','RUNNING':'Игра идёт','FINISHED':'Завершена'}[s.detective_status.value] }}</span></div>
+              <div class="detective-actions">
+                {% if s.detective_status.value!='RUNNING' %}<form method="post" action="/admin/events/{{ event.id }}/detective/{{ s.id }}/generate"><button>Создать и проверить кейсы</button></form>{% endif %}
+                {% if s.detective_status.value=='READY' %}<span class="badge good">Готов к запуску в составе игры</span>{% endif %}
+                {% if s.detective_status.value=='RUNNING' %}<span class="badge warn">Сейчас проводится</span>{% endif %}
+                {% if s.detective_status.value=='FINISHED' %}<span class="badge">Завершён · при новом запуске игры начнётся снова</span>{% endif %}
+              </div>
+            {% if s.detective_cases %}<details class="case-results"><summary>Командные кейсы и результаты · {{ s.detective_cases|length }}</summary><div class="case-grid">
+              {% for case in s.detective_cases %}<div class="case-item"><div><b>{{ case.team.name }}</b><span>{{ case.clues|length }} улик</span></div>{% if case.submission %}<span class="badge {{ 'good' if case.submission.is_correct else 'warn' }}">{{ ('Правильно · '+case.submission.points_awarded|string+' б.') if case.submission.is_correct else 'Неверный ответ' }}</span>{% else %}<span class="muted">Ответа пока нет</span>{% endif %}</div>{% endfor %}
+            </div></details>{% endif %}
+          </div>
+        {% endif %}
+      </div>
+    </article>
+  {% else %}<div class="empty-program"><b>В игре пока нет этапов</b><span>Добавьте первый этап ниже.</span></div>{% endfor %}
+  </div>
+
+  <details class="add-stage-panel">
+    <summary>＋ Добавить этап в игру</summary>
+    <form method="post" action="/admin/events/{{ event.id }}/stages" class="stage-create-form" data-stage-form>
+      <input type="hidden" name="program_id" value="{{ program.id }}">
+      <label class="stage-type-picker">Тип этапа<select name="stage_type" data-stage-type><option value="QUIZ">Этап с вопросами</option><option value="DETECTIVE">Детективная игра</option></select></label>
+      <label>Название RU<input name="title" required placeholder="Что? Где? Когда?"></label>
+      <label>Название KZ<input name="title_kk"></label>
+      <label>Описание RU<input name="description"></label><label>Описание KZ<input name="description_kk"></label>
+      <fieldset class="type-settings quiz-settings" data-settings="QUIZ">
+        <legend>Настройки вопросов</legend>
+        <p>Эти значения будут автоматически подставляться в каждый новый вопрос.</p>
+        <label>Время вопроса, сек.<input type="number" name="default_duration_seconds" value="{{ event.default_question_duration }}" min="5" max="3600"></label>
+        <label>Время на отправку, сек.<input type="number" name="default_submission_seconds" value="20" min="5" max="300"></label>
+        <label>Баллы за вопрос<input type="number" step=".5" name="default_team_points" value="{{ event.default_team_points }}" min="0"></label>
+      </fieldset>
+      <fieldset class="type-settings detective-settings" data-settings="DETECTIVE" hidden>
+        <legend>Настройки детективной игры</legend>
+        <p>Команды получают баллы только за правильный ответ. Чем раньше команда ответила, тем больше баллов.</p>
+        <label>Продолжительность, сек.<input type="number" name="detective_duration_seconds" value="1200" min="60" max="7200"></label>
+        <div class="score-editor">
+          <div class="score-title">Баллы за правильный ответ по скорости</div>
+          <label><span>1-е место</span><input type="number" step=".5" min="0" name="detective_point_1" value="30"></label>
+          <label><span>2-е место</span><input type="number" step=".5" min="0" name="detective_point_2" value="25"></label>
+          <label><span>3-е место</span><input type="number" step=".5" min="0" name="detective_point_3" value="20"></label>
+          <label><span>4-е место</span><input type="number" step=".5" min="0" name="detective_point_4" value="17"></label>
+          <label><span>5-е место</span><input type="number" step=".5" min="0" name="detective_point_5" value="14"></label>
+          <label><span>6-е и далее</span><input type="number" step=".5" min="0" name="detective_point_6" value="10"></label>
+        </div>
+      </fieldset>
+      <button>Добавить этап</button>
+    </form>
+  </details>
+
+  <footer class="program-actions">
+    {% if program.status!='RUNNING' and program.stage_links %}<form method="post" action="/admin/events/{{ event.id }}/programs/{{ program.id }}/launch"><button class="green">▶ Запустить игру</button></form>{% endif %}
+    {% if program.status=='RUNNING' %}<a class="screen-link" href="/admin/events/{{ event.id }}?tab=live">Перейти к проведению →</a>{% endif %}
+    <form method="post" action="/admin/events/{{ event.id }}/programs/{{ program.id }}/delete" onsubmit="return confirm('Удалить игру? Этапы и вопросы останутся в базе.')"><button class="link-danger">Удалить игру</button></form>
+  </footer>
+</section>
+{% else %}
+<section class="empty-builder"><div>◫</div><h2>Создайте первую игру</h2><p>После этого внутри неё появятся этапы и вопросы.</p><details class="create-popover" open><summary>＋ Новая игра</summary><form method="post" action="/admin/events/{{ event.id }}/programs" class="stack-form"><label>Название<input name="title" required></label><label>Описание<textarea name="description"></textarea></label><button>Создать игру</button></form></details></section>
+{% endfor %}
+
+<details class="utility-panel"><summary>Импорт и экспорт</summary><div class="utility-content"><a class="screen-link" href="/admin/events/{{ event.id }}/content/export">Скачать JSON</a><form method="post" action="/admin/events/{{ event.id }}/content/import" enctype="multipart/form-data"><input type="file" name="content_file" accept=".json,application/json" required><button>Импортировать</button></form></div></details>
+<script>
+document.querySelectorAll('[data-stage-form]').forEach((form) => {
+  const picker = form.querySelector('[data-stage-type]');
+  const update = () => {
+    form.querySelectorAll('[data-settings]').forEach((block) => {
+      const active = block.dataset.settings === picker.value;
+      block.hidden = !active;
+      block.querySelectorAll('input,select,textarea').forEach((field) => field.disabled = !active);
+    });
+    const title = form.querySelector('input[name="title"]');
+    title.placeholder = picker.value === 'DETECTIVE' ? 'Детективная игра' : 'Что? Где? Когда?';
+  };
+  picker.addEventListener('change', update);
+  update();
+});
+</script>
