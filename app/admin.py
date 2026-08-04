@@ -20,7 +20,7 @@ from .detective import generate_cases_for_stage
 from .detective_runtime import prepared_cases, send_detective_clue, start_detective_stage
 from .models import (
     Answer, AnswerScope, AuditLog, CaptainElection, CaptainVote, DetectiveCase, DetectiveClue, DetectiveSubmission,
-    DetectiveStatus, Event, GameProgram, GameProgramStage, PendingRegistration, Player, PlayerRole, Question, QuestionStatus,
+    DetectiveStatus, Event, EventSlide, GameProgram, GameProgramStage, PendingRegistration, Player, PlayerRole, Question, QuestionStatus,
     QuestionType, ScoreAdjustment, Stage, StageType, Team, TeamQuestionPrompt,
 )
 from .services import adjust_score, audit, grade_all_answers, grade_answer, leaderboard, set_question_status, submit_detective_answer
@@ -249,6 +249,9 @@ def event_dashboard(
             selectinload(GameProgram.stage_links).selectinload(GameProgramStage.stage).selectinload(Stage.questions)
         ).where(GameProgram.event_id == event.id).order_by(GameProgram.created_at.desc())
     ).all()
+    slides = db.scalars(select(EventSlide).where(
+        EventSlide.event_id == event.id
+    ).order_by(EventSlide.position)).all()
     active_program = next((program for program in programs if program.status == "RUNNING"), None)
     answers = db.scalars(
         select(Answer).join(Question).join(Stage).where(Stage.event_id == event.id)
@@ -265,7 +268,7 @@ def event_dashboard(
     template_name = "content_page.html" if tab == "content" else "event_dashboard.html"
     return templates.TemplateResponse(request, template_name, {
         "tab": tab, "event": event, "teams": teams, "players": players,
-        "pending_registrations": pending_registrations, "stages": stages, "programs": programs,
+        "pending_registrations": pending_registrations, "stages": stages, "programs": programs, "slides": slides,
         "active_program": active_program,
         "roster_locked": active_program is not None,
         "notice": request.query_params.get("notice", ""),
@@ -335,6 +338,7 @@ def live_control_state(
         else None
     )
     question = db.get(Question, event.current_question_id) if event.current_question_id else None
+    current_slide = db.get(EventSlide, event.current_slide_id) if event.current_slide_id else None
     team_answers = {}
     if question:
         team_answers = {
@@ -401,11 +405,12 @@ def live_control_state(
         })
 
     next_labels = {
-        "INTRO": "Перейти к выбору капитанов",
+        "INTRO": "Показать первый вступительный слайд",
         "CAPTAIN_ELECTION_READY": "Сначала запустите голосование",
         "CAPTAIN_ELECTION_RUNNING": "Завершить выбор капитанов",
         "CAPTAIN_ELECTION_COMPLETE": "Показать правила игры",
         "RULES": "Перейти к тестовому вопросу",
+        "PROGRAM_SLIDE": "Показать следующий слайд",
         "STAGE_INTRO": "Показать номер первого вопроса",
         "QUESTION_INTRO": "Показать вопрос",
         "STAGE_COMPLETE": "Перейти к следующему этапу",
@@ -441,6 +446,7 @@ def live_control_state(
             "CAPTAIN_ELECTION_RUNNING": "Идёт выбор капитанов",
             "CAPTAIN_ELECTION_COMPLETE": "Капитаны выбраны",
             "RULES": "Правила игры",
+            "PROGRAM_SLIDE": "Информационный слайд",
             "STAGE_INTRO": "Начало этапа",
             "QUESTION_INTRO": "Номер вопроса",
             "STAGE_COMPLETE": "Этап завершён",
@@ -456,6 +462,10 @@ def live_control_state(
         "question": None if not question else {
             "id": question.id, "title": question.title, "text": question.text,
             "answer": question.correct_answer, "stage": question.stage.title,
+        },
+        "slide": None if not current_slide else {
+            "title": current_slide.title, "text": current_slide.text,
+            "title_kk": current_slide.title_kk, "text_kk": current_slide.text_kk,
         },
         "detective": None if not detective_stage else {
             "id": detective_stage.id, "title": detective_stage.title,
@@ -517,6 +527,90 @@ def show_service_slide(
     audit(db, actor, "live.slide", event, title.strip())
     db.commit()
     return {"ok": True}
+
+
+@router.post("/events/{event_id}/slides")
+def create_program_slide(
+    event_id: int, title: str = Form(...), text: str = Form(""),
+    title_kk: str = Form(""), text_kk: str = Form(""),
+    db: Session = Depends(get_db), actor: str = Depends(admin_auth),
+):
+    event = require_event(db, event_id)
+    position = (db.scalar(select(func.max(EventSlide.position)).where(
+        EventSlide.event_id == event_id
+    )) or 0) + 1
+    slide = EventSlide(
+        event_id=event_id, position=position, title=title.strip(), text=text.strip(),
+        title_kk=title_kk.strip(), text_kk=text_kk.strip(),
+    )
+    db.add(slide)
+    event.slides_initialized = True
+    db.flush()
+    audit(db, actor, "slide.create", slide, slide.title)
+    db.commit()
+    return go(event_id, "content")
+
+
+@router.post("/events/{event_id}/slides/{slide_id}/edit")
+def edit_program_slide(
+    event_id: int, slide_id: int, title: str = Form(...), text: str = Form(""),
+    title_kk: str = Form(""), text_kk: str = Form(""),
+    db: Session = Depends(get_db), actor: str = Depends(admin_auth),
+):
+    slide = db.get(EventSlide, slide_id)
+    if not slide or slide.event_id != event_id:
+        raise HTTPException(404, "Слайд не найден")
+    slide.title, slide.text = title.strip(), text.strip()
+    slide.title_kk, slide.text_kk = title_kk.strip(), text_kk.strip()
+    audit(db, actor, "slide.edit", slide, slide.title)
+    db.commit()
+    return go(event_id, "content")
+
+
+@router.post("/events/{event_id}/slides/{slide_id}/move")
+def move_program_slide(
+    event_id: int, slide_id: int, direction: str = Form(...),
+    db: Session = Depends(get_db), actor: str = Depends(admin_auth),
+):
+    slide = db.get(EventSlide, slide_id)
+    if not slide or slide.event_id != event_id:
+        raise HTTPException(404, "Слайд не найден")
+    if direction not in {"up", "down"}:
+        raise HTTPException(400, "Неизвестное направление")
+    ordering = EventSlide.position.desc() if direction == "up" else EventSlide.position.asc()
+    comparison = EventSlide.position < slide.position if direction == "up" else EventSlide.position > slide.position
+    neighbour = db.scalar(select(EventSlide).where(
+        EventSlide.event_id == event_id, comparison
+    ).order_by(ordering))
+    if neighbour:
+        old_position, new_position = slide.position, neighbour.position
+        slide.position = (db.scalar(select(func.max(EventSlide.position)).where(
+            EventSlide.event_id == event_id
+        )) or 0) + 1
+        db.flush()
+        neighbour.position = old_position
+        db.flush()
+        slide.position = new_position
+        audit(db, actor, "slide.move", slide, direction)
+        db.commit()
+    return go(event_id, "content")
+
+
+@router.post("/events/{event_id}/slides/{slide_id}/delete")
+def delete_program_slide(
+    event_id: int, slide_id: int,
+    db: Session = Depends(get_db), actor: str = Depends(admin_auth),
+):
+    event = require_event(db, event_id)
+    slide = db.get(EventSlide, slide_id)
+    if not slide or slide.event_id != event_id:
+        raise HTTPException(404, "Слайд не найден")
+    title = slide.title
+    db.delete(slide)
+    event.slides_initialized = True
+    audit(db, actor, "slide.delete", event, title)
+    db.commit()
+    return go(event_id, "content")
 
 
 @router.post("/events/{event_id}/live/questions/{question_id}/preview")
@@ -1287,11 +1381,20 @@ async def launch_program(
         question.status = QuestionStatus.DRAFT
         question.opened_at = None
         question.closed_at = None
+    test_question_ids = [question.id for question in questions if question.stage.system_key == "test"]
+    if test_question_ids:
+        prompt_ids = list(db.scalars(select(TeamQuestionPrompt.id).where(
+            TeamQuestionPrompt.question_id.in_(test_question_ids)
+        )).all())
+        db.execute(delete(Answer).where(Answer.question_id.in_(test_question_ids)))
+        if prompt_ids:
+            db.execute(delete(TeamQuestionPrompt).where(TeamQuestionPrompt.id.in_(prompt_ids)))
     program.status = "RUNNING"
     program.started_at = datetime.utcnow()
     program.finished_at = None
     event.current_question_id = None
     event.current_detective_stage_id = None
+    event.current_slide_id = None
     event.display_mode = "INTRO"
     event.timer_started_at = None
     event.timer_duration_seconds = ELECTION_DURATION_SECONDS

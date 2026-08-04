@@ -60,6 +60,7 @@ class Event(Base):
     display_mode: Mapped[str] = mapped_column(String(30), default="WELCOME")
     current_question_id: Mapped[int | None] = mapped_column(nullable=True)
     current_detective_stage_id: Mapped[int | None] = mapped_column(nullable=True)
+    current_slide_id: Mapped[int | None] = mapped_column(nullable=True)
     timer_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     timer_duration_seconds: Mapped[int] = mapped_column(Integer, default=60)
     default_question_duration: Mapped[int] = mapped_column(Integer, default=60)
@@ -69,11 +70,30 @@ class Event(Base):
     display_language: Mapped[str] = mapped_column(String(10), default="BOTH")
     screen_history_json: Mapped[str] = mapped_column(Text, default="[]")
     screen_future_json: Mapped[str] = mapped_column(Text, default="[]")
+    slides_initialized: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     teams: Mapped[list[Team]] = relationship(back_populates="event", cascade="all, delete-orphan")
     stages: Mapped[list[Stage]] = relationship(back_populates="event", cascade="all, delete-orphan")
     programs: Mapped[list[GameProgram]] = relationship(back_populates="event", cascade="all, delete-orphan")
+    slides: Mapped[list[EventSlide]] = relationship(
+        back_populates="event", cascade="all, delete-orphan", order_by="EventSlide.position"
+    )
+
+
+class EventSlide(Base):
+    __tablename__ = "event_slides"
+    __table_args__ = (UniqueConstraint("event_id", "position"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("games.id"), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    text: Mapped[str] = mapped_column(Text, default="")
+    title_kk: Mapped[str] = mapped_column(String(200), default="")
+    text_kk: Mapped[str] = mapped_column(Text, default="")
+    position: Mapped[int] = mapped_column(Integer, default=1)
+
+    event: Mapped[Event] = relationship(back_populates="slides")
 
 
 class Team(Base):

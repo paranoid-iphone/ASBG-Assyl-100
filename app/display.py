@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from .database import get_db
 from .detective_runtime import finish_detective_stage, start_detective_stage
-from .models import Answer, AnswerScope, CaptainElection, DetectiveSubmission, Event, GameProgram, GameProgramStage, PlayerRole, Question, QuestionStatus, Stage, StageType
+from .models import Answer, AnswerScope, CaptainElection, DetectiveSubmission, Event, EventSlide, GameProgram, GameProgramStage, PlayerRole, Question, QuestionStatus, Stage, StageType
 from .config import get_settings
 from .captain_elections import ELECTION_DURATION_SECONDS, start_captain_election_for_team
 from .services import leaderboard, set_question_status
@@ -61,6 +61,7 @@ def screen_state(token: str, db: Session = Depends(get_db)):
             for answer in sorted(submitted, key=lambda item: hash(f"{question.id}:{item.id}"))
         ]
     detective_stage = db.get(Stage, event.current_detective_stage_id) if event.current_detective_stage_id else None
+    stored_slide = db.get(EventSlide, event.current_slide_id) if event.current_slide_id else None
     detective_answered = db.scalar(
         select(__import__("sqlalchemy").func.count(DetectiveSubmission.id))
         .where(DetectiveSubmission.stage_id == detective_stage.id)
@@ -117,7 +118,11 @@ def screen_state(token: str, db: Session = Depends(get_db)):
         },
         "teams": board["teams"][:10],
         "server_time": datetime.utcnow().isoformat(),
-        "slide": CUSTOM_SLIDES.get(event.id),
+        "slide": ({
+            "title": stored_slide.title, "text": stored_slide.text,
+            "title_kk": stored_slide.title_kk, "text_kk": stored_slide.text_kk,
+            "position": stored_slide.position,
+        } if stored_slide else CUSTOM_SLIDES.get(event.id)),
     }
 
 
@@ -129,6 +134,7 @@ def restore_screen_snapshot(db: Session, event: Event, snapshot: dict) -> None:
     event.display_mode = snapshot["display_mode"]
     event.current_question_id = snapshot["current_question_id"]
     event.current_detective_stage_id = snapshot["current_detective_stage_id"]
+    event.current_slide_id = snapshot.get("current_slide_id")
     remaining = snapshot.get("timer_remaining")
     event.timer_duration_seconds = remaining if remaining is not None else snapshot["timer_duration_seconds"]
     event.timer_started_at = datetime.utcnow() if remaining is not None else None
@@ -254,6 +260,31 @@ async def advance_screen(token: str, db: Session = Depends(get_db)):
         return {"action": "resume"}
     if event.display_mode == "INTRO":
         push_screen_history(event)
+        first_slide = db.scalar(select(EventSlide).where(
+            EventSlide.event_id == event.id
+        ).order_by(EventSlide.position))
+        if first_slide:
+            event.current_slide_id = first_slide.id
+            event.display_mode = "PROGRAM_SLIDE"
+            db.commit()
+            return {"action": "program_slide", "slide_id": first_slide.id}
+        event.display_mode = "CAPTAIN_ELECTION_READY"
+        event.timer_duration_seconds = ELECTION_DURATION_SECONDS
+        event.timer_started_at = None
+        db.commit()
+        return {"action": "captain_election_ready"}
+    if event.display_mode == "PROGRAM_SLIDE":
+        current_slide = db.get(EventSlide, event.current_slide_id) if event.current_slide_id else None
+        next_slide = db.scalar(select(EventSlide).where(
+            EventSlide.event_id == event.id,
+            EventSlide.position > (current_slide.position if current_slide else 0),
+        ).order_by(EventSlide.position))
+        push_screen_history(event)
+        if next_slide:
+            event.current_slide_id = next_slide.id
+            db.commit()
+            return {"action": "program_slide", "slide_id": next_slide.id}
+        event.current_slide_id = None
         event.display_mode = "CAPTAIN_ELECTION_READY"
         event.timer_duration_seconds = ELECTION_DURATION_SECONDS
         event.timer_started_at = None

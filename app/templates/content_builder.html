@@ -6,6 +6,45 @@
   </div>
 </div>
 
+<section class="program-card slide-editor">
+  <header class="program-head">
+    <div class="program-number">▣</div>
+    <div class="program-title"><div class="eyebrow">ВСТУПИТЕЛЬНЫЕ СЛАЙДЫ</div><h2>Презентация перед игрой</h2><p>Эти слайды показываются после приветствия и перед голосованием за капитана.</p></div>
+    <div class="program-summary"><span>{{ slides|length }} слайдов</span></div>
+  </header>
+  <div class="slide-editor-list">
+    {% for slide in slides %}
+    <details class="question-row slide-row">
+      <summary><span class="q-index">{{ slide.position }}</span><span class="q-main"><b>{{ slide.title }}</b><small>{{ slide.text|truncate(115) }}</small></span><span class="format-chip">Информация</span><span class="chevron">⌄</span></summary>
+      <div class="question-detail">
+        <form method="post" action="/admin/events/{{ event.id }}/slides/{{ slide.id }}/edit" class="question-form">
+          <div class="language-columns">
+            <div><h4>Русский</h4><label>Заголовок<input name="title" value="{{ slide.title }}" required></label><label>Текст<textarea name="text">{{ slide.text }}</textarea></label></div>
+            <div><h4>Қазақша</h4><label>Тақырып<input name="title_kk" value="{{ slide.title_kk }}"></label><label>Мәтін<textarea name="text_kk">{{ slide.text_kk }}</textarea></label></div>
+          </div>
+          <button>Сохранить слайд</button>
+        </form>
+        <div class="question-actions">
+          <form method="post" action="/admin/events/{{ event.id }}/slides/{{ slide.id }}/move"><button class="secondary" name="direction" value="up">↑ Выше</button></form>
+          <form method="post" action="/admin/events/{{ event.id }}/slides/{{ slide.id }}/move"><button class="secondary" name="direction" value="down">↓ Ниже</button></form>
+          <form method="post" action="/admin/events/{{ event.id }}/slides/{{ slide.id }}/delete" onsubmit="return confirm('Удалить этот слайд?')"><button class="link-danger">Удалить слайд</button></form>
+        </div>
+      </div>
+    </details>
+    {% else %}<div class="empty-inline">Дополнительных слайдов пока нет.</div>{% endfor %}
+  </div>
+  <details class="add-question">
+    <summary>＋ Добавить слайд</summary>
+    <form method="post" action="/admin/events/{{ event.id }}/slides" class="question-form">
+      <div class="language-columns">
+        <div><h4>Русский</h4><label>Заголовок<input name="title" required placeholder="Правила игры"></label><label>Текст<textarea name="text"></textarea></label></div>
+        <div><h4>Қазақша</h4><label>Тақырып<input name="title_kk"></label><label>Мәтін<textarea name="text_kk"></textarea></label></div>
+      </div>
+      <button>Добавить слайд</button>
+    </form>
+  </details>
+</section>
+
 {% for program in programs[:1] %}
 <section class="program-card">
   <header class="program-head">

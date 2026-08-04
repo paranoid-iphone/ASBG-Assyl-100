@@ -52,6 +52,8 @@ def ensure_schema_compatibility():
     game_additions = {
         "screen_history_json": "TEXT NOT NULL DEFAULT '[]'",
         "screen_future_json": "TEXT NOT NULL DEFAULT '[]'",
+        "current_slide_id": "INTEGER",
+        "slides_initialized": "BOOLEAN NOT NULL DEFAULT FALSE",
     }
     with engine.begin() as connection:
         for name, definition in game_additions.items():

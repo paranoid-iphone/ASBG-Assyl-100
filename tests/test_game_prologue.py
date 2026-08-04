@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.database import Base, SessionLocal, engine
 from app.main import app
-from app.models import Event, GameProgram, GameProgramStage, Question, Stage
+from app.models import Event, EventSlide, GameProgram, GameProgramStage, Question, Stage
 from app.runtime_state import CUSTOM_SLIDES
 
 
@@ -21,6 +21,7 @@ def test_program_starts_with_intro_then_captain_stage_and_rules():
         question = Question(stage_id=stage.id, title="Q1", text="Question", correct_answer="Answer", position=1)
         program = GameProgram(event_id=event.id, title="Main")
         db.add_all([question, program]); db.flush()
+        db.add(EventSlide(event_id=event.id, position=1, title="Program", text="Three stages"))
         db.add(GameProgramStage(program_id=program.id, stage_id=stage.id, position=1))
         db.commit()
         event_id, program_id, token = event.id, program.id, event.display_token
@@ -32,6 +33,8 @@ def test_program_starts_with_intro_then_captain_stage_and_rules():
         )
         assert response.status_code == 303
         assert client.get(f"/api/screen/{token}").json()["mode"] == "INTRO"
+        assert client.post(f"/api/screen/{token}/advance").json()["action"] == "program_slide"
+        assert client.get(f"/api/screen/{token}").json()["slide"]["title"] == "Program"
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "captain_election_ready"
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "captain_election_complete"
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "rules"

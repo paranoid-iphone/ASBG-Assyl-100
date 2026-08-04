@@ -18,6 +18,7 @@ def screen_snapshot(event) -> dict:
         "display_mode": event.display_mode,
         "current_question_id": event.current_question_id,
         "current_detective_stage_id": event.current_detective_stage_id,
+        "current_slide_id": event.current_slide_id,
         "timer_duration_seconds": event.timer_duration_seconds,
         "timer_remaining": remaining,
         "slide": dict(CUSTOM_SLIDES.get(event.id) or {}),

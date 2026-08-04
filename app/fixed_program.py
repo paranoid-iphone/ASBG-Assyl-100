@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from .models import Event, GameProgram, GameProgramStage, QuestionType, Stage, StageType
+from .models import Event, EventSlide, GameProgram, GameProgramStage, Question, QuestionType, Stage, StageType
 
 
 FIXED_PROGRAM_TITLE = "Интеллектуальная игра"
@@ -122,6 +122,47 @@ def ensure_fixed_program(db: Session, event: Event) -> GameProgram:
         else:
             stage.system_key = definition.key
         ordered_stages.append(stage)
+
+    test_stage = next(stage for stage in ordered_stages if stage.system_key == "test")
+    if not test_stage.questions:
+        test_stage.questions.append(Question(
+            position=1,
+            title="Тестовый вопрос",
+            title_kk="Сынақ сұрағы",
+            text="Часы отбивают шесть ударов за пять секунд. За сколько секунд те же часы отобьют двенадцать ударов?",
+            text_kk="Сағат алты рет бес секундта соғады. Сол сағат он екі рет неше секундта соғады?",
+            correct_answer="11 секунд",
+            correct_answer_kk="11 секунд",
+            explanation="Между шестью ударами пять интервалов. Один интервал длится секунду, а между двенадцатью ударами — одиннадцать интервалов.",
+            explanation_kk="Алты соққының арасында бес аралық бар. Бір аралық бір секундқа созылады, ал он екі соққының арасында он бір аралық бар.",
+            personal_answers_enabled=False,
+            team_answers_enabled=True,
+            personal_points=0,
+            team_points=0,
+            duration_seconds=30,
+            submission_seconds=20,
+            show_anonymous_answers=True,
+        ))
+
+    if not event.slides_initialized:
+        if not event.slides:
+            db.add_all([
+                EventSlide(
+                    event_id=event.id, position=1,
+                    title="Сегодня вас ждут три этапа",
+                    text="Командные вопросы, задачи с выбором решения и финальная детективная игра.",
+                    title_kk="Бүгін сіздерді үш кезең күтеді",
+                    text_kk="Командалық сұрақтар, шешім таңдау тапсырмалары және финалдық детектив ойыны.",
+                ),
+                EventSlide(
+                    event_id=event.id, position=2,
+                    title="Сначала выберем капитана",
+                    text="Зайдите в Telegram-бот и проголосуйте. За себя голосовать нельзя.",
+                    title_kk="Алдымен капитанды таңдаймыз",
+                    text_kk="Telegram-ботқа кіріп, дауыс беріңіз. Өзіңізге дауыс беруге болмайды.",
+                ),
+            ])
+        event.slides_initialized = True
 
     program = db.scalar(
         select(GameProgram).where(GameProgram.event_id == event.id).order_by(GameProgram.id)

@@ -76,7 +76,7 @@ function render(d){
     html=`<div class="eyebrow">Интеллектуальная игра</div><div class="center"><div class="event">${esc(d.event)}</div><div class="description">${esc(d.description)}</div></div>`;
   }else if(d.mode==='RESERVE_READY'){
     html=`<div class="eyebrow">Дополнительный этап / Қосымша кезең</div><div class="center"><div class="event">Резервный раунд</div><div class="description">Если осталось время, нажмите стрелку вправо, чтобы продолжить игру</div><div class="description">Уақыт қалса, ойынды жалғастыру үшін оң жақ көрсеткіні басыңыз</div></div>`;
-  }else if(d.mode==='SLIDE'){
+  }else if(d.mode==='SLIDE'||d.mode==='PROGRAM_SLIDE'){
     const slide=d.slide||{};const title=d.display_language==='KK'&&slide.title_kk?slide.title_kk:slide.title;const text=d.display_language==='KK'&&slide.text_kk?slide.text_kk:slide.text;
     if(d.display_language==='BOTH'&&slide.title_kk)html=`<div class="eyebrow">Интеллектуальная игра / Зияткерлік ойын</div><div class="center"><div class="bilingual"><div class="language-block"><div class="lang">Русский</div><div class="event" style="font-size:3.5vw">${esc(slide.title)}</div><div class="description" style="font-size:1.5vw">${esc(slide.text||'')}</div></div><div class="language-block"><div class="lang">Қазақша</div><div class="event" style="font-size:3.5vw">${esc(slide.title_kk)}</div><div class="description" style="font-size:1.5vw">${esc(slide.text_kk||'')}</div></div></div></div>`;
     else html=`<div class="eyebrow">Интеллектуальная игра</div><div class="center"><div class="event" style="font-size:5vw">${esc(title||'Продолжаем игру')}</div><div class="description">${esc(text||'')}</div></div>`;

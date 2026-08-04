@@ -2,7 +2,7 @@ from sqlalchemy import func, select
 
 from app.database import Base, SessionLocal, engine
 from app.fixed_program import ensure_fixed_program
-from app.models import Event, GameProgram, GameProgramStage, Question, QuestionType, Stage, StageType
+from app.models import Event, EventSlide, GameProgram, GameProgramStage, Question, QuestionType, Stage, StageType
 
 
 def setup_function():
@@ -39,6 +39,10 @@ def test_fixed_program_preserves_existing_questions_and_is_idempotent():
         assert db.scalar(select(func.count(GameProgram.id)).where(GameProgram.event_id == event.id)) == 1
         assert db.scalar(select(func.count(GameProgramStage.id)).where(GameProgramStage.program_id == first.id)) == 7
         assert db.scalar(select(func.count(Question.id)).where(Question.stage_id == legacy_stage.id)) == 1
+        test_stage = db.scalar(select(Stage).where(Stage.event_id == event.id, Stage.system_key == "test"))
+        assert len(test_stage.questions) == 1
+        assert test_stage.questions[0].team_points == 0
+        assert db.scalar(select(func.count(EventSlide.id)).where(EventSlide.event_id == event.id)) == 2
 
 
 def test_existing_choice_and_detective_stages_are_reused():
