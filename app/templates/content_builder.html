@@ -1,39 +1,17 @@
 <div class="builder-intro">
   <div>
-    <div class="eyebrow">КОНСТРУКТОР ПРОГРАММЫ</div>
-    <h2>Игры, этапы и вопросы</h2>
-    <p>Сначала создайте игру, затем добавляйте в неё этапы. В обычном этапе можно смешивать вопросы с текстовым ответом и вопросы с выбором варианта.</p>
+    <div class="eyebrow">ПРОГРАММА МЕРОПРИЯТИЯ</div>
+    <h2>Этапы и вопросы</h2>
+    <p>Структура мероприятия уже настроена. Добавляйте и редактируйте вопросы внутри нужного блока.</p>
   </div>
-  <details class="create-popover">
-    <summary>＋ Новая игра</summary>
-    <form method="post" action="/admin/events/{{ event.id }}/programs" class="stack-form">
-      <label>Название игры<input name="title" required placeholder="Основная интеллектуальная игра"></label>
-      <label>Описание<textarea name="description" placeholder="Короткая заметка для организаторов"></textarea></label>
-      <button>Создать игру</button>
-    </form>
-  </details>
 </div>
 
-{% if not stages %}
-<section class="utility-panel quick-fill-panel">
-  <div class="utility-content">
-    <div>
-      <h3>Заполнить готовую программу</h3>
-      <p>Будут добавлены 3 этапа: ЧГК, выбор одного варианта и детективная игра. Всего 10 тестовых вопросов.</p>
-    </div>
-    <form method="post" action="/admin/events/{{ event.id }}/content/fill-default">
-      <button class="green">＋ Добавить 3 готовых этапа</button>
-    </form>
-  </div>
-</section>
-{% endif %}
-
-{% for program in programs %}
+{% for program in programs[:1] %}
 <section class="program-card">
   <header class="program-head">
     <div class="program-number">{{ loop.index }}</div>
     <div class="program-title">
-      <div class="eyebrow">ИГРА</div>
+      <div class="eyebrow">ФИКСИРОВАННАЯ ПРОГРАММА</div>
       <h2>{{ program.title }}</h2>
       {% if program.description %}<p>{{ program.description }}</p>{% endif %}
     </div>
@@ -52,7 +30,7 @@
       <div class="stage-body">
         <header class="stage-head">
           <div>
-            <div class="stage-type">{{ 'Детективная игра' if s.stage_type.value=='DETECTIVE' else 'Этап с вопросами' }}</div>
+            <div class="stage-type">{{ {'test':'Тренировка','what':'Этап 1 · блок «Что?»','where':'Этап 1 · блок «Где?»','when':'Этап 1 · блок «Когда?»','choice':'Этап 2 · выбор варианта','detective':'Этап 3 · детектив'}.get(s.system_key, 'Этап программы') }}</div>
             <h3>{{ s.title }}{% if s.title_kk %}<small> / {{ s.title_kk }}</small>{% endif %}</h3>
             {% if s.description %}<p class="muted">{{ s.description }}</p>{% endif %}
           </div>
@@ -198,7 +176,6 @@
   <footer class="program-actions">
     {% if program.status!='RUNNING' and program.stage_links %}<form method="post" action="/admin/events/{{ event.id }}/programs/{{ program.id }}/launch"><button class="green">▶ Запустить игру</button></form>{% endif %}
     {% if program.status=='RUNNING' %}<a class="screen-link" href="/admin/events/{{ event.id }}?tab=live">Перейти к проведению →</a>{% endif %}
-    <form method="post" action="/admin/events/{{ event.id }}/programs/{{ program.id }}/delete" onsubmit="return confirm('Удалить игру? Этапы и вопросы останутся в базе.')"><button class="link-danger">Удалить игру</button></form>
   </footer>
 </section>
 {% else %}
