@@ -164,22 +164,27 @@ def add_question(stage: Stage, position: int, data: dict, question_type: Questio
     )
 
 
-def seed_game_content() -> None:
-    Base.metadata.create_all(engine)
-    with SessionLocal() as db:
-        event = db.scalar(select(Event).where(Event.active.is_(True)).order_by(Event.id)) or db.scalar(
-            select(Event).order_by(Event.id)
-        )
-        if not event:
-            raise RuntimeError("Сначала создайте мероприятие в админке.")
-        existing = db.scalar(select(GameProgram).where(
-            GameProgram.event_id == event.id,
-            GameProgram.title == PROGRAM_TITLE,
+def seed_game_content_for_event(db, event: Event) -> tuple[GameProgram, bool]:
+        existing_stage = db.scalar(select(Stage).where(
+            Stage.event_id == event.id,
+            Stage.title == "1 этап · Что? Где? Когда?",
         ))
-        if existing:
-            print(f"Игра уже существует: id={existing.id}. Повторное создание пропущено.")
-            return
+        if existing_stage:
+            existing_program = db.scalar(
+                select(GameProgram)
+                .join(GameProgramStage, GameProgramStage.program_id == GameProgram.id)
+                .where(GameProgramStage.stage_id == existing_stage.id)
+            )
+            if existing_program:
+                return existing_program, False
 
+        linked_program_ids = select(GameProgramStage.program_id)
+        program = db.scalar(
+            select(GameProgram).where(
+                GameProgram.event_id == event.id,
+                ~GameProgram.id.in_(linked_program_ids),
+            ).order_by(GameProgram.id)
+        )
         start_position = (db.scalar(select(func.max(Stage.position)).where(Stage.event_id == event.id)) or 0) + 1
         chgk = Stage(
             event_id=event.id,
@@ -228,20 +233,36 @@ def seed_game_content() -> None:
             for index, data in enumerate(CHOICE_QUESTIONS, 1)
         ])
 
-        program = GameProgram(
-            event_id=event.id,
-            title=PROGRAM_TITLE,
-            description="ЧГК → выбор решения → детективная гонка",
-        )
-        db.add(program)
-        db.flush()
+        if program is None:
+            program = GameProgram(
+                event_id=event.id,
+                title=PROGRAM_TITLE,
+                description="ЧГК → выбор решения → детективная гонка",
+            )
+            db.add(program)
+            db.flush()
+        elif not program.description:
+            program.description = "ЧГК → выбор решения → детективная гонка"
         for position, stage in enumerate((chgk, choice, detective), 1):
             db.add(GameProgramStage(program_id=program.id, stage_id=stage.id, position=position))
-        db.commit()
-        print(
-            f"Создана игра id={program.id}: 3 этапа, "
-            f"{len(CHGK_QUESTIONS) + len(CHOICE_QUESTIONS)} вопросов."
+        db.flush()
+        return program, True
+
+
+def seed_game_content() -> None:
+    Base.metadata.create_all(engine)
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.active.is_(True)).order_by(Event.id)) or db.scalar(
+            select(Event).order_by(Event.id)
         )
+        if not event:
+            raise RuntimeError("Сначала создайте мероприятие в админке.")
+        program, created = seed_game_content_for_event(db, event)
+        db.commit()
+        if created:
+            print(f"Создана игра id={program.id}: 3 этапа, {len(CHGK_QUESTIONS) + len(CHOICE_QUESTIONS)} вопросов.")
+        else:
+            print(f"Игра уже заполнена: id={program.id}. Повторное создание пропущено.")
 
 
 if __name__ == "__main__":

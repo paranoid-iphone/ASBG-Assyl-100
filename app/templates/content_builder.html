@@ -14,6 +14,20 @@
   </details>
 </div>
 
+{% if not stages %}
+<section class="utility-panel quick-fill-panel">
+  <div class="utility-content">
+    <div>
+      <h3>Заполнить готовую программу</h3>
+      <p>Будут добавлены 3 этапа: ЧГК, выбор одного варианта и детективная игра. Всего 10 тестовых вопросов.</p>
+    </div>
+    <form method="post" action="/admin/events/{{ event.id }}/content/fill-default">
+      <button class="green">＋ Добавить 3 готовых этапа</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+
 {% for program in programs %}
 <section class="program-card">
   <header class="program-head">

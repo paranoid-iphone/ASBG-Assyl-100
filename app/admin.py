@@ -25,6 +25,7 @@ from .models import (
 from .services import adjust_score, audit, grade_all_answers, grade_answer, leaderboard, set_question_status, submit_detective_answer
 from .runtime_state import CLUE_DELIVERY, CUSTOM_SLIDES, SCREEN_HEARTBEATS, SCREEN_HISTORY, TEAM_DELIVERY, TEMPORARY_SENDERS, mark_team_delivery
 from .public_url import public_base_url
+from .seed_game_content import seed_game_content_for_event
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -1454,6 +1455,21 @@ def export_content(event_id: int, db: Session = Depends(get_db), actor=Depends(a
         media_type="application/json; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/events/{event_id}/content/fill-default")
+def fill_default_content(event_id: int, db: Session = Depends(get_db), actor=Depends(admin_auth)):
+    event = require_event(db, event_id)
+    program, created = seed_game_content_for_event(db, event)
+    audit(
+        db,
+        actor,
+        "content.default_created" if created else "content.default_skipped",
+        program,
+        "3 stages and 10 questions" if created else "content already exists",
+    )
+    db.commit()
+    return go(event_id, "content")
 
 
 @router.post("/events/{event_id}/content/import")
