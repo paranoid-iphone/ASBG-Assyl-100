@@ -24,8 +24,13 @@ def test_survey_keyboards_and_bilingual_copy():
     assert [button.callback_data for button in rating_markup.inline_keyboard[0]] == [
         f"eventrating:7:{rating}" for rating in range(1, 6)
     ]
-    assert COMMUNICATION_QUESTION_RU and COMMUNICATION_QUESTION_KK
-    assert FEEDBACK_QUESTION_RU and FEEDBACK_QUESTION_KK
+    assert COMMUNICATION_QUESTION_RU
+    assert COMMUNICATION_QUESTION_KK == (
+        "Командаңызда ең белсенді болып, шешімдер мен идеялар ұсынып әрі "
+        "сапалы орындауға көмектескен кім?"
+    )
+    assert FEEDBACK_QUESTION_RU
+    assert FEEDBACK_QUESTION_KK == "Іс-шараны бағалап, пікіріңізді қалдырыңыз. Пікіріңіз біз үшін маңызды!"
 
 
 def test_survey_results_are_persisted():

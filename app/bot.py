@@ -748,18 +748,18 @@ async def event_rating(callback: CallbackQuery, state: FSMContext):
             EventFeedback.event_id == event_id, EventFeedback.player_id == player.id,
         ))
         if existing:
-            text = "Сіз іс-шараны бағаладыңыз." if player.preferred_language == "KK" else "Вы уже оценили мероприятие."
-            await callback.answer(text, show_alert=True)
-            return
-        db.add(EventFeedback(event_id=event_id, player_id=player.id, rating=rating))
+            # Повторный выбор позволяет закончить начатый отзыв или исправить оценку.
+            existing.rating = rating
+        else:
+            db.add(EventFeedback(event_id=event_id, player_id=player.id, rating=rating))
         db.commit()
         kk, player_id = player.preferred_language == "KK", player.id
     await state.set_state(InputState.event_review)
     await state.update_data(feedback_event_id=event_id, feedback_player_id=player_id)
     text = (
-        f"{rating} ⭐ — рақмет! Пікіріңізді бір хабарламамен жазыңыз. Өткізіп жіберу үшін /skip командасын жіберіңіз."
+        f"{rating} ⭐ — рақмет! Енді пікіріңізді бір хабарламамен жазыңыз. Өткізіп жіберу үшін /skip командасын жіберіңіз."
         if kk else
-        f"{rating} ⭐ — спасибо! Напишите отзыв одним сообщением. Чтобы пропустить, отправьте /skip."
+        f"{rating} ⭐ — спасибо! Теперь напишите отзыв одним сообщением. Чтобы пропустить, отправьте /skip."
     )
     await callback.message.edit_text(text, reply_markup=None)
     await callback.answer()
