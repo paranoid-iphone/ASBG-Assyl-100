@@ -1490,13 +1490,15 @@ def create_program(
 async def launch_program(
     event_id: int, program_id: int,
     db: Session = Depends(get_db), actor=Depends(admin_auth),
+    start_at_first_stage: bool = False,
 ):
     event = require_event(db, event_id)
     # Synchronize the fixed event structure at the point of launch as well as
     # when the editor is opened. This also upgrades older databases where the
     # practice stage existed without its zero-point question.
-    ensure_fixed_program(db, event)
-    db.flush()
+    if not start_at_first_stage:
+        ensure_fixed_program(db, event)
+        db.flush()
     program = db.scalar(select(GameProgram).options(
         selectinload(GameProgram.stage_links).selectinload(GameProgramStage.stage).selectinload(Stage.questions)
     ).where(GameProgram.id == program_id, GameProgram.event_id == event_id))
@@ -1539,11 +1541,17 @@ async def launch_program(
     event.current_detective_stage_id = None
     event.current_slide_id = None
     event.pause_snapshot_json = ""
-    event.display_mode = "INTRO"
+    if start_at_first_stage:
+        first_kind, first_item = program_items[0]
+        event.current_question_id = first_item.id if first_kind == "question" else None
+        event.current_detective_stage_id = first_item.id if first_kind == "detective" else None
+        event.display_mode = "STAGE_INTRO"
+    else:
+        event.display_mode = "INTRO"
     event.timer_started_at = None
     event.timer_duration_seconds = ELECTION_DURATION_SECONDS
     clear_persistent_navigation(event)
-    first_detail = "intro"
+    first_detail = "stage_intro" if start_at_first_stage else "intro"
     audit(db, actor, "program.launch", program, first_detail)
     db.commit()
     return go(event_id, "live")
@@ -1554,6 +1562,12 @@ async def launch_single_stage(
     event_id: int, stage_id: int,
     db: Session = Depends(get_db), actor=Depends(admin_auth),
 ):
+    event = require_event(db, event_id)
+    # Synchronize before creating the temporary one-stage program. Otherwise
+    # ensure_fixed_program can mistake that newest temporary program for the
+    # canonical full game and attach every stage to it.
+    ensure_fixed_program(db, event)
+    db.flush()
     stage = db.get(Stage, stage_id)
     if not stage or stage.event_id != event_id:
         raise HTTPException(404, "Этап не найден")
@@ -1567,7 +1581,7 @@ async def launch_single_stage(
     db.add(GameProgramStage(program_id=program.id, stage_id=stage.id, position=1))
     audit(db, actor, "stage.launch_prepare", stage, f"program={program.id}")
     db.commit()
-    return await launch_program(event_id, program.id, db, actor)
+    return await launch_program(event_id, program.id, db, actor, True)
 
 
 @router.post("/events/{event_id}/programs/{program_id}/delete")

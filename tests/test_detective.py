@@ -1,6 +1,8 @@
+import asyncio
 from datetime import datetime
 import json
 
+from app.admin import launch_single_stage
 from app.database import Base, SessionLocal, engine
 from app.detective import generate_cases_for_stage
 from app.models import (
@@ -105,3 +107,24 @@ def test_detective_answer_is_single_use_and_ranked():
         assert submission.rank == 1
         assert submission.points_awarded == 30
         assert leaderboard(db, event.id)["teams"][0]["points"] == 30
+
+
+def test_single_detective_launch_skips_full_game_prologue():
+    with SessionLocal() as db:
+        event = Event(name="Detective")
+        db.add(event); db.flush()
+        create_team_with_players(db, event, "One", "ONE", 2)
+        stage = Stage(
+            event_id=event.id, title="Cases", stage_type=StageType.DETECTIVE,
+            detective_status=DetectiveStatus.DRAFT,
+        )
+        db.add(stage); db.flush()
+        generate_cases_for_stage(db, stage)
+        stage.detective_status = DetectiveStatus.READY
+        db.commit()
+
+        asyncio.run(launch_single_stage(event.id, stage.id, db, "test"))
+        db.refresh(event)
+        assert event.display_mode == "STAGE_INTRO"
+        assert event.current_detective_stage_id == stage.id
+        assert event.current_slide_id is None
