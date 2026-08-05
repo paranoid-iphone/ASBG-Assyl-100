@@ -2,9 +2,10 @@ import asyncio
 from datetime import datetime
 import json
 
-from app.admin import launch_single_stage
+from app.admin import finish_live_detective, launch_single_stage
 from app.database import Base, SessionLocal, engine
 from app.detective import generate_cases_for_stage
+from app.detective_runtime import detective_answer_markup
 from app.models import (
     DetectiveStatus, Event, Player, PlayerRole, Stage, StageType, Team,
 )
@@ -128,3 +129,31 @@ def test_single_detective_launch_skips_full_game_prologue():
         assert event.display_mode == "STAGE_INTRO"
         assert event.current_detective_stage_id == stage.id
         assert event.current_slide_id is None
+
+
+def test_captain_gets_options_and_admin_can_finish_detective_early():
+    with SessionLocal() as db:
+        event = Event(name="Detective", display_mode="DETECTIVE")
+        db.add(event); db.flush()
+        create_team_with_players(db, event, "One", "ONE", 2)
+        stage = Stage(
+            event_id=event.id, title="Cases", stage_type=StageType.DETECTIVE,
+            detective_status=DetectiveStatus.RUNNING, detective_started_at=datetime.utcnow(),
+        )
+        db.add(stage); db.flush()
+        case = generate_cases_for_stage(db, stage)[0]
+        event.current_detective_stage_id = stage.id
+        db.commit()
+
+        markup = detective_answer_markup(case)
+        assert [button.text for row in markup.inline_keyboard for button in row] == json.loads(case.options_json)
+        assert all(
+            button.callback_data.startswith(f"detective:pick:{case.id}:")
+            for row in markup.inline_keyboard for button in row
+        )
+
+        finish_live_detective(event.id, db, "test")
+        db.refresh(event); db.refresh(stage)
+        assert stage.detective_status == DetectiveStatus.FINISHED
+        assert event.display_mode == "STAGE_COMPLETE"
+        assert event.current_detective_stage_id == stage.id

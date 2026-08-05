@@ -927,6 +927,25 @@ def finish_live_program(
     return {"ok": True}
 
 
+@router.post("/events/{event_id}/live/detective/finish")
+def finish_live_detective(
+    event_id: int, db: Session = Depends(get_db), actor: str = Depends(admin_auth),
+):
+    event = require_event(db, event_id)
+    stage = db.get(Stage, event.current_detective_stage_id) if event.current_detective_stage_id else None
+    if not stage or event.display_mode != "DETECTIVE":
+        raise HTTPException(409, "Сейчас детективный этап не проводится")
+    stage.detective_status = DetectiveStatus.FINISHED
+    event.timer_started_at = None
+    # Keep the stage id until the next transition so STAGE_COMPLETE can locate
+    # the current item and either continue the full game or finish a standalone run.
+    event.current_detective_stage_id = stage.id
+    event.display_mode = "STAGE_COMPLETE"
+    audit(db, actor, "detective.force_finish", stage)
+    db.commit()
+    return {"ok": True, "stage_id": stage.id}
+
+
 @router.post("/events/{event_id}/live/restart")
 def restart_live_program(
     event_id: int,
