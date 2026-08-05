@@ -26,7 +26,7 @@ class StageDefinition:
 
 FIXED_STAGES = (
     StageDefinition(
-        "test", "Тестовый вопрос", "Сынақ сұрағы", StageType.QUIZ,
+        "test", "Этап 0 · Тестовый раунд", "0 кезең · Сынақ раунды", StageType.QUIZ,
         "Полный тренировочный цикл без начисления баллов.",
         "Ұпай берілмейтін толық жаттығу кезеңі.",
         points=0,
@@ -124,6 +124,10 @@ def ensure_fixed_program(db: Session, event: Event) -> GameProgram:
         ordered_stages.append(stage)
 
     test_stage = next(stage for stage in ordered_stages if stage.system_key == "test")
+    # Stage zero is a fixed training step, not a scored game round.
+    test_stage.title = "Этап 0 · Тестовый раунд"
+    test_stage.title_kk = "0 кезең · Сынақ раунды"
+    test_stage.default_team_points = 0
     if not test_stage.questions:
         test_stage.questions.append(Question(
             position=1,
@@ -143,6 +147,9 @@ def ensure_fixed_program(db: Session, event: Event) -> GameProgram:
             submission_seconds=20,
             show_anonymous_answers=True,
         ))
+    for practice_question in test_stage.questions:
+        practice_question.personal_points = 0
+        practice_question.team_points = 0
 
     if not event.slides_initialized:
         if not event.slides:

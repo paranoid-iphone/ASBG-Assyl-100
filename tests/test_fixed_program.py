@@ -40,6 +40,8 @@ def test_fixed_program_preserves_existing_questions_and_is_idempotent():
         assert db.scalar(select(func.count(GameProgramStage.id)).where(GameProgramStage.program_id == first.id)) == 7
         assert db.scalar(select(func.count(Question.id)).where(Question.stage_id == legacy_stage.id)) == 1
         test_stage = db.scalar(select(Stage).where(Stage.event_id == event.id, Stage.system_key == "test"))
+        assert test_stage.title == "Этап 0 · Тестовый раунд"
+        assert test_stage.title_kk == "0 кезең · Сынақ раунды"
         assert len(test_stage.questions) == 1
         assert test_stage.questions[0].team_points == 0
         assert db.scalar(select(func.count(EventSlide.id)).where(EventSlide.event_id == event.id)) == 2

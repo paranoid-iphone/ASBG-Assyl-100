@@ -85,6 +85,7 @@ def screen_state(token: str, db: Session = Depends(get_db)):
             "type": question.question_type.value,
             "options": __import__("json").loads(question.options_json or "[]"),
             "stage": {
+                "key": question.stage.system_key,
                 "ru": question.stage.title,
                 "kk": question.stage.title_kk or question.stage.title,
                 "description_ru": question.stage.description,
