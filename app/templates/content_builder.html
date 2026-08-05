@@ -245,7 +245,8 @@
     <input type="file" name="package_file" accept=".json,application/json" required>
     <button>Импортировать полный пакет</button>
   </form>
-  <p class="muted">Импорт выполняется в мероприятие без этапов. Новое мероприятие изначально пустое; если этапы уже есть, сначала скачайте резервную копию и сделайте полный сброс в Настройках.</p>
+  <p class="muted">Импорт выполняется в мероприятие без этапов. Если этапы уже есть, скачайте резервную копию и очистите только программу.</p>
+  <details style="width:100%;border-top:1px solid var(--line);padding-top:12px"><summary style="cursor:pointer;color:#b52f2f;font-weight:800">Очистить только программу перед импортом</summary><div style="margin-top:12px;padding:14px;background:#fff3f3;border:1px solid #efc8c8;border-radius:9px"><p><b>Удалятся игры, этапы, вопросы, слайды, игровые ответы и баллы.</b> Команды, участники, Telegram-привязки, опросы и настройки сохранятся.</p><form method="post" action="/admin/events/{{ event.id }}/content/clear" data-json-form onsubmit="return confirm('Очистить программу и игровые результаты? Команды и участники сохранятся.')"><label>Введите точное название мероприятия: <b>{{ event.name }}</b><input name="confirmation" required autocomplete="off"></label><button style="background:#b52f2f">Очистить программу</button></form></div></details>
   <details><summary>Старый формат: только этапы и вопросы</summary><div class="utility-content"><a class="screen-link" href="/admin/events/{{ event.id }}/content/export">Скачать старый JSON</a><form method="post" action="/admin/events/{{ event.id }}/content/import" enctype="multipart/form-data"><input type="file" name="content_file" accept=".json,application/json" required><button>Добавить этапы и вопросы</button></form></div></details>
 </div></details>
 <script>

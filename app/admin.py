@@ -315,6 +315,45 @@ def clear_event_data(db: Session, event: Event) -> None:
         store.clear()
 
 
+def clear_program_data(db: Session, event: Event) -> None:
+    """Remove reusable game content and game results while preserving people and surveys."""
+    team_ids = list(db.scalars(select(Team.id).where(Team.event_id == event.id)).all())
+    stage_ids = list(db.scalars(select(Stage.id).where(Stage.event_id == event.id)).all())
+    question_ids = list(db.scalars(select(Question.id).where(Question.stage_id.in_(stage_ids or [-1]))).all())
+    program_ids = list(db.scalars(select(GameProgram.id).where(GameProgram.event_id == event.id)).all())
+    case_ids = list(db.scalars(select(DetectiveCase.id).where(DetectiveCase.stage_id.in_(stage_ids or [-1]))).all())
+    election_ids = list(db.scalars(select(CaptainElection.id).where(CaptainElection.team_id.in_(team_ids or [-1]))).all())
+
+    db.execute(delete(CaptainVote).where(CaptainVote.election_id.in_(election_ids or [-1])))
+    db.execute(delete(CaptainElection).where(CaptainElection.id.in_(election_ids or [-1])))
+    db.execute(delete(DetectiveSubmission).where(DetectiveSubmission.stage_id.in_(stage_ids or [-1])))
+    db.execute(delete(DetectiveClue).where(DetectiveClue.case_id.in_(case_ids or [-1])))
+    db.execute(delete(DetectiveCase).where(DetectiveCase.id.in_(case_ids or [-1])))
+    db.execute(delete(TeamQuestionPrompt).where(TeamQuestionPrompt.question_id.in_(question_ids or [-1])))
+    db.execute(delete(Answer).where(Answer.question_id.in_(question_ids or [-1])))
+    db.execute(delete(ScoreAdjustment).where(ScoreAdjustment.event_id == event.id))
+    db.execute(delete(ResponseArchive).where(ResponseArchive.event_id == event.id))
+    db.execute(delete(GameProgramStage).where(GameProgramStage.program_id.in_(program_ids or [-1])))
+    db.execute(delete(Question).where(Question.id.in_(question_ids or [-1])))
+    db.execute(delete(GameProgram).where(GameProgram.id.in_(program_ids or [-1])))
+    db.execute(delete(Stage).where(Stage.id.in_(stage_ids or [-1])))
+    db.execute(delete(EventSlide).where(EventSlide.event_id == event.id))
+
+    event.display_mode = "WELCOME"
+    event.current_question_id = None
+    event.current_detective_stage_id = None
+    event.current_slide_id = None
+    event.timer_started_at = None
+    event.timer_duration_seconds = event.default_question_duration
+    event.screen_history_json = "[]"
+    event.screen_future_json = "[]"
+    event.pause_snapshot_json = ""
+    event.slides_initialized = True
+    CUSTOM_SLIDES.pop(event.id, None)
+    for store in (TEAM_DELIVERY, CLUE_DELIVERY, TEMPORARY_SENDERS):
+        store.clear()
+
+
 def apply_three_minute_timings(db: Session, event: Event) -> None:
     """One-time upgrade of existing content to 3 minutes + 1 minute."""
     event.default_question_duration = 180
@@ -2365,6 +2404,22 @@ async def import_event_package(
     audit(db, actor, "package.import", event, f"stages={len(stages_data)}; programs={len(programs_data)}")
     db.commit()
     return go(event_id, "content", "Пакет импортирован. Программа, этапы, вопросы и слайды готовы к работе.")
+
+
+@router.post("/events/{event_id}/content/clear")
+def clear_event_program(
+    event_id: int,
+    confirmation: str = Form(...),
+    db: Session = Depends(get_db),
+    actor: str = Depends(admin_auth),
+):
+    event = require_event(db, event_id)
+    if not secrets.compare_digest(confirmation.strip(), event.name):
+        raise HTTPException(400, "Введите точное название мероприятия")
+    clear_program_data(db, event)
+    audit(db, actor, "event.program_clear", event, "program and game results removed; people and surveys preserved")
+    db.commit()
+    return go(event_id, "content", "Программа очищена. Команды, участники, опросы и настройки сохранены — теперь можно импортировать пакет.")
 
 
 @router.post("/events/{event_id}/content/fill-default")
