@@ -134,6 +134,11 @@ def _install_first_stage_questions(db: Session, stages: list[Stage]) -> None:
         db.flush()
 
     stage = by_key["main"]
+    # Default questions are a starter pack, not mandatory content. Once an
+    # organizer has any questions in the unified stage, respect additions and
+    # deletions instead of silently restoring removed built-ins on every page.
+    if db.scalar(select(Question.id).where(Question.stage_id == stage.id).limit(1)) is not None:
+        return
     next_position = (db.scalar(select(func.max(Question.position)).where(Question.stage_id == stage.id)) or 0) + 1
     for data in FIRST_STAGE_QUESTIONS.values():
         if db.scalar(select(Question).where(Question.stage_id == stage.id, Question.title == data["title"])):
