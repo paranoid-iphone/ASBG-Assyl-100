@@ -52,6 +52,7 @@ def ensure_schema_compatibility():
     game_additions = {
         "screen_history_json": "TEXT NOT NULL DEFAULT '[]'",
         "screen_future_json": "TEXT NOT NULL DEFAULT '[]'",
+        "pause_snapshot_json": "TEXT NOT NULL DEFAULT ''",
         "current_slide_id": "INTEGER",
         "slides_initialized": "BOOLEAN NOT NULL DEFAULT FALSE",
     }

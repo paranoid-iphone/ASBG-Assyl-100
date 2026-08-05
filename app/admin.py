@@ -26,7 +26,7 @@ from .models import (
 from .services import adjust_score, audit, grade_all_answers, grade_answer, leaderboard, set_question_status, submit_detective_answer
 from .runtime_state import (
     CLUE_DELIVERY, CUSTOM_SLIDES, SCREEN_HEARTBEATS, TEAM_DELIVERY, TEMPORARY_SENDERS,
-    clear_persistent_navigation, mark_team_delivery, push_persistent_history,
+    clear_persistent_navigation, mark_team_delivery, push_persistent_history, screen_snapshot,
 )
 from .public_url import public_base_url
 from .seed_game_content import seed_game_content_for_event
@@ -252,7 +252,7 @@ def event_dashboard(
     slides = db.scalars(select(EventSlide).where(
         EventSlide.event_id == event.id
     ).order_by(EventSlide.position)).all()
-    active_program = next((program for program in programs if program.status == "RUNNING"), None)
+    active_program = next((program for program in programs if program.status in {"RUNNING", "PAUSED"}), None)
     answers = db.scalars(
         select(Answer).join(Question).join(Stage).where(Stage.event_id == event.id)
         .order_by(Stage.position, Question.position, Answer.submitted_at)
@@ -270,7 +270,8 @@ def event_dashboard(
         "tab": tab, "event": event, "teams": teams, "players": players,
         "pending_registrations": pending_registrations, "stages": stages, "programs": programs, "slides": slides,
         "active_program": active_program,
-        "roster_locked": active_program is not None,
+        "roster_locked": active_program is not None and active_program.status == "RUNNING",
+        "roster_paused": active_program is not None and active_program.status == "PAUSED",
         "notice": request.query_params.get("notice", ""),
         "answers": answers, "answer_counts": answer_counts, "logs": logs, "active_question": active_question,
         "board": leaderboard(db, event.id), "roles": PlayerRole,
@@ -302,7 +303,7 @@ def live_control_state(
         .selectinload(Stage.questions)
     ).where(
         GameProgram.event_id == event.id,
-        GameProgram.status == "RUNNING",
+        GameProgram.status.in_(["RUNNING", "PAUSED"]),
     ).order_by(GameProgram.started_at.desc()))
     items: list[tuple[str, Question | Stage, str]] = []
     if program:
@@ -438,7 +439,7 @@ def live_control_state(
     heartbeat = SCREEN_HEARTBEATS.get(event.id)
     heartbeat_age = int((datetime.utcnow() - heartbeat).total_seconds()) if heartbeat else None
     return {
-        "program": None if not program else {"id": program.id, "title": program.title},
+        "program": None if not program else {"id": program.id, "title": program.title, "status": program.status},
         "mode": event.display_mode,
         "mode_label": {
             "INTRO": "Приветствие",
@@ -481,7 +482,7 @@ def live_control_state(
         "current_index": current_index,
         "teams": teams,
         "next_label": next_labels.get(event.display_mode, "Продолжить"),
-        "can_advance": bool(program or question) and detective_can_finish and not timer_blocks_advance and not (
+        "can_advance": event.display_mode != "PAUSED" and bool(program or question) and detective_can_finish and not timer_blocks_advance and not (
             event.display_mode in {"CAPTAIN_ELECTION_READY", "CAPTAIN_ELECTION_RUNNING"}
             and any(not team["captain"] for team in teams)
         ),
@@ -825,6 +826,75 @@ async def resend_detective_clue(
     return {"ok": True}
 
 
+@router.post("/events/{event_id}/live/pause")
+def pause_live_program(
+    event_id: int,
+    db: Session = Depends(get_db),
+    actor: str = Depends(admin_auth),
+):
+    event = require_event(db, event_id)
+    program = db.scalar(select(GameProgram).where(
+        GameProgram.event_id == event.id, GameProgram.status == "RUNNING",
+    ).order_by(GameProgram.started_at.desc()))
+    if not program:
+        raise HTTPException(409, "Сейчас нет запущенной игры")
+    if event.display_mode == "DETECTIVE":
+        raise HTTPException(409, "Во время детективной гонки техническая пауза недоступна: время влияет на места команд")
+    snapshot = screen_snapshot(event)
+    event.pause_snapshot_json = json.dumps(snapshot, ensure_ascii=False)
+    event.display_mode = "PAUSED"
+    event.timer_started_at = None
+    program.status = "PAUSED"
+    if snapshot.get("display_mode") == "CAPTAIN_ELECTION_RUNNING":
+        for election in db.scalars(select(CaptainElection).join(Team).where(
+            Team.event_id == event.id, CaptainElection.active.is_(True)
+        )).all():
+            election.expires_at = datetime.utcnow() + timedelta(days=365)
+    audit(db, actor, "live.pause", event, f"program={program.id}; mode={snapshot.get('display_mode')}")
+    db.commit()
+    return {"ok": True, "status": "PAUSED"}
+
+
+@router.post("/events/{event_id}/live/resume")
+def resume_live_program(
+    event_id: int,
+    db: Session = Depends(get_db),
+    actor: str = Depends(admin_auth),
+):
+    event = require_event(db, event_id)
+    program = db.scalar(select(GameProgram).where(
+        GameProgram.event_id == event.id, GameProgram.status == "PAUSED",
+    ).order_by(GameProgram.started_at.desc()))
+    if not program or not event.pause_snapshot_json:
+        raise HTTPException(409, "Игра не находится на технической паузе")
+    try:
+        snapshot = json.loads(event.pause_snapshot_json)
+    except (TypeError, ValueError):
+        raise HTTPException(409, "Не удалось восстановить состояние игры")
+    event.display_mode = snapshot.get("display_mode", "WELCOME")
+    event.current_question_id = snapshot.get("current_question_id")
+    event.current_detective_stage_id = snapshot.get("current_detective_stage_id")
+    event.current_slide_id = snapshot.get("current_slide_id")
+    remaining = snapshot.get("timer_remaining")
+    event.timer_duration_seconds = remaining if remaining is not None else snapshot.get("timer_duration_seconds", 60)
+    event.timer_started_at = datetime.utcnow() if remaining is not None else None
+    if snapshot.get("slide"):
+        CUSTOM_SLIDES[event.id] = snapshot["slide"]
+    else:
+        CUSTOM_SLIDES.pop(event.id, None)
+    if event.display_mode == "CAPTAIN_ELECTION_RUNNING":
+        election_remaining = max(0, int(remaining or 0))
+        for election in db.scalars(select(CaptainElection).join(Team).where(
+            Team.event_id == event.id, CaptainElection.active.is_(True)
+        )).all():
+            election.expires_at = datetime.utcnow() + timedelta(seconds=election_remaining)
+    program.status = "RUNNING"
+    event.pause_snapshot_json = ""
+    audit(db, actor, "live.resume", event, f"program={program.id}; mode={event.display_mode}")
+    db.commit()
+    return {"ok": True, "status": "RUNNING"}
+
+
 @router.post("/events/{event_id}/live/finish")
 def finish_live_program(
     event_id: int,
@@ -834,7 +904,7 @@ def finish_live_program(
     event = require_event(db, event_id)
     program = db.scalar(select(GameProgram).where(
         GameProgram.event_id == event.id,
-        GameProgram.status == "RUNNING",
+        GameProgram.status.in_(["RUNNING", "PAUSED"]),
     ))
     if program:
         program.status = "FINISHED"
@@ -846,6 +916,8 @@ def finish_live_program(
     event.display_mode = "WELCOME"
     event.current_question_id = None
     event.current_detective_stage_id = None
+    event.current_slide_id = None
+    event.pause_snapshot_json = ""
     event.timer_started_at = None
     audit(db, actor, "live.finish", event, f"program={program.id if program else 'none'}")
     db.commit()
@@ -1385,7 +1457,7 @@ async def launch_program(
         raise HTTPException(409, "В выбранной игре нет вопросов или детективных этапов")
     questions = [item for kind, item in program_items if kind == "question"]
     for other in db.scalars(select(GameProgram).where(GameProgram.event_id == event_id)).all():
-        if other.status == "RUNNING":
+        if other.status in {"RUNNING", "PAUSED"}:
             other.status = "FINISHED"
             other.finished_at = datetime.utcnow()
     for question in questions:
@@ -1406,6 +1478,7 @@ async def launch_program(
     event.current_question_id = None
     event.current_detective_stage_id = None
     event.current_slide_id = None
+    event.pause_snapshot_json = ""
     event.display_mode = "INTRO"
     event.timer_started_at = None
     event.timer_duration_seconds = ELECTION_DURATION_SECONDS
@@ -1445,7 +1518,7 @@ def delete_program(
     program = db.get(GameProgram, program_id)
     if not program or program.event_id != event_id:
         raise HTTPException(404, "Игра не найдена")
-    if program.status == "RUNNING":
+    if program.status in {"RUNNING", "PAUSED"}:
         raise HTTPException(409, "Сначала завершите запущенную игру")
     title = program.title
     db.delete(program)

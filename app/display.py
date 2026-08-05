@@ -253,6 +253,8 @@ def teams_without_captain(event: Event) -> list[str]:
 @router.post("/api/screen/{token}/advance")
 async def advance_screen(token: str, db: Session = Depends(get_db)):
     event = event_by_token(db, token)
+    if event.display_mode == "PAUSED":
+        raise HTTPException(409, "Игра находится на технической паузе")
     future = navigation_stack(event, "screen_future_json")
     if future:
         snapshot = future.pop()
@@ -478,6 +480,8 @@ async def advance_screen(token: str, db: Session = Depends(get_db)):
 @router.post("/api/screen/{token}/back")
 def previous_screen(token: str, db: Session = Depends(get_db)):
     event = event_by_token(db, token)
+    if event.display_mode == "PAUSED":
+        raise HTTPException(409, "Игра находится на технической паузе")
     history = navigation_stack(event, "screen_history_json")
     if not history:
         items = ordered_program_items(db, event.id)

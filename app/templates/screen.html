@@ -72,6 +72,8 @@ function render(d){
     html=`<div class="eyebrow">${esc(q.stage?.ru||'Этап')} / ${esc(q.stage?.kk||'Кезең')}</div><div class="center"><div class="event">Вопрос №${q.position||1}</div><div class="description">Сұрақ №${q.position||1}<br><br>Приготовьтесь: вопрос будет показан один раз · Дайындалыңыздар: сұрақ бір рет көрсетіледі</div></div>`;
   }else if(d.mode==='STAGE_COMPLETE'){
     const game=d.detective||{},stage=q.stage||{};html=`<div class="eyebrow">Этап завершён / Кезең аяқталды</div><div class="center"><div class="event" style="font-size:4.5vw">${esc(stage.ru||game.title_ru||'Этап завершён')}</div><div class="description">Отличная работа! Переходим дальше.<br>Керемет жұмыс! Келесі кезеңге өтеміз.</div></div>`;
+  }else if(d.mode==='PAUSED'){
+    html=`<div class="eyebrow">Техническая пауза / Техникалық үзіліс</div><div class="center"><div class="event" style="font-size:5vw">Скоро продолжим</div><div class="description">Организаторы вносят необходимые изменения.<br>Ұйымдастырушылар қажетті өзгерістер енгізуде.</div></div>`;
   }else if(d.mode==='WELCOME'){
     html=`<div class="eyebrow">Интеллектуальная игра</div><div class="center"><div class="event">${esc(d.event)}</div><div class="description">${esc(d.description)}</div></div>`;
   }else if(d.mode==='RESERVE_READY'){

@@ -55,7 +55,7 @@
       {% if program.description %}<p>{{ program.description }}</p>{% endif %}
     </div>
     <div class="program-summary">
-      <span class="badge {{ 'good' if program.status=='RUNNING' else ('warn' if program.status=='FINISHED' else 'role') }}">{{ 'Запущена' if program.status=='RUNNING' else ('Завершена' if program.status=='FINISHED' else 'Черновик') }}</span>
+      <span class="badge {{ 'good' if program.status=='RUNNING' else ('warn' if program.status in ['FINISHED','PAUSED'] else 'role') }}">{{ 'Запущена' if program.status=='RUNNING' else ('На паузе' if program.status=='PAUSED' else ('Завершена' if program.status=='FINISHED' else 'Черновик')) }}</span>
       <span>{{ program.stage_links|length }} этапов</span>
       <span>{{ program_question_counts[program.id] }} вопросов</span>
     </div>
@@ -228,8 +228,8 @@
   </details>
 
   <footer class="program-actions">
-    {% if program.status!='RUNNING' and program.stage_links %}<form method="post" action="/admin/events/{{ event.id }}/programs/{{ program.id }}/launch"><button class="green">▶ Запустить игру</button></form>{% endif %}
-    {% if program.status=='RUNNING' %}<a class="screen-link" href="/admin/events/{{ event.id }}?tab=live">Перейти к проведению →</a>{% endif %}
+    {% if program.status not in ['RUNNING','PAUSED'] and program.stage_links %}<form method="post" action="/admin/events/{{ event.id }}/programs/{{ program.id }}/launch"><button class="green">▶ Запустить игру</button></form>{% endif %}
+    {% if program.status in ['RUNNING','PAUSED'] %}<a class="screen-link" href="/admin/events/{{ event.id }}?tab=live">Перейти к проведению →</a>{% endif %}
   </footer>
 </section>
 {% else %}

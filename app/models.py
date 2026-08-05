@@ -70,6 +70,7 @@ class Event(Base):
     display_language: Mapped[str] = mapped_column(String(10), default="BOTH")
     screen_history_json: Mapped[str] = mapped_column(Text, default="[]")
     screen_future_json: Mapped[str] = mapped_column(Text, default="[]")
+    pause_snapshot_json: Mapped[str] = mapped_column(Text, default="")
     slides_initialized: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
