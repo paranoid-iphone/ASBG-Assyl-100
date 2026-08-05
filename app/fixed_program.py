@@ -5,7 +5,10 @@ from dataclasses import dataclass
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from .models import Event, EventSlide, GameProgram, GameProgramStage, Question, QuestionType, Stage, StageType
+from .models import (
+    Answer, Event, EventSlide, GameProgram, GameProgramStage, Question,
+    QuestionType, Stage, StageType, TeamQuestionPrompt,
+)
 
 
 FIXED_PROGRAM_TITLE = "Интеллектуальная игра"
@@ -133,6 +136,13 @@ def _install_first_stage_questions(db: Session, stages: list[Stage]) -> None:
     for stage in stages:
         for question in list(stage.questions):
             if stage.system_key in {"what", "where", "when"} and question.title in LEGACY_DEMO_TITLES:
+                # Production databases can already contain rehearsal answers
+                # and Telegram prompt references for the demo pack. Remove
+                # those dependants first to satisfy PostgreSQL foreign keys.
+                db.execute(delete(Answer).where(Answer.question_id == question.id))
+                db.execute(delete(TeamQuestionPrompt).where(TeamQuestionPrompt.question_id == question.id))
+                if stage.event.current_question_id == question.id:
+                    stage.event.current_question_id = None
                 db.delete(question)
         db.flush()
 
