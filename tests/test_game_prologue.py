@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.database import Base, SessionLocal, engine
 from app.main import app
-from app.models import Event, EventSlide, GameProgram, GameProgramStage, Question, Stage
+from app.models import Event, EventSlide, GameProgram, GameProgramStage, Player, PlayerRole, Question, Stage, Team
 from app.runtime_state import CUSTOM_SLIDES
 
 
@@ -101,3 +101,24 @@ def test_back_falls_back_to_previous_program_question_when_history_is_empty():
         assert state["question"]["ru"]["text"] == "First"
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "forward"
         assert client.get(f"/api/screen/{token}").json()["question"]["ru"]["text"] == "Second"
+
+
+def test_completed_captain_slide_reopens_when_captain_is_removed():
+    with SessionLocal() as db:
+        event = Event(name="Election", display_mode="CAPTAIN_ELECTION_COMPLETE")
+        db.add(event); db.flush()
+        team = Team(event_id=event.id, name="Alpha", code="ALPHA")
+        db.add(team); db.flush()
+        captain = Player(
+            team_id=team.id, full_name="Captain", registration_code="CAPTAIN",
+            role=PlayerRole.CAPTAIN, active=True,
+        )
+        db.add(captain); db.commit()
+        captain.role = PlayerRole.PLAYER
+        db.commit()
+        token = event.display_token
+
+    with TestClient(app) as client:
+        state = client.get(f"/api/screen/{token}").json()
+        assert state["mode"] == "CAPTAIN_ELECTION_READY"
+        assert state["captain_election"]["missing"] == ["Alpha"]

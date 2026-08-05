@@ -41,6 +41,15 @@ def screen(token: str, request: Request, db: Session = Depends(get_db)):
 def screen_state(token: str, db: Session = Depends(get_db)):
     event = event_by_token(db, token)
     SCREEN_HEARTBEATS[event.id] = datetime.utcnow()
+    missing_captains = teams_without_captain(event)
+    if event.display_mode == "CAPTAIN_ELECTION_COMPLETE" and missing_captains:
+        # A captain may be removed manually after the election slide was
+        # reached. The public screen must reflect the live roster, not a stale
+        # presentation state.
+        event.display_mode = "CAPTAIN_ELECTION_READY"
+        event.timer_started_at = None
+        event.timer_duration_seconds = ELECTION_DURATION_SECONDS
+        db.commit()
     question = db.get(Question, event.current_question_id) if event.current_question_id else None
     elapsed = (datetime.utcnow() - event.timer_started_at).total_seconds() if event.timer_started_at else None
     remaining = max(0, event.timer_duration_seconds - int(elapsed)) if elapsed is not None else (
@@ -49,7 +58,7 @@ def screen_state(token: str, db: Session = Depends(get_db)):
         else None
     )
     active_teams = [team for team in event.teams if team.active]
-    captain_teams = len(active_teams) - len(teams_without_captain(event))
+    captain_teams = len(active_teams) - len(missing_captains)
     board = leaderboard(db, event.id)
     anonymous_answers = []
     if question and event.display_mode == "TEAM_ANSWERS":
@@ -104,7 +113,7 @@ def screen_state(token: str, db: Session = Depends(get_db)):
         "captain_election": {
             "selected": captain_teams,
             "total": len(active_teams),
-            "missing": teams_without_captain(event),
+            "missing": missing_captains,
         },
         "timer_sound_enabled": event.timer_sound_enabled,
         "anonymous_answers": anonymous_answers,
