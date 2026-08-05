@@ -375,9 +375,9 @@ newTeamName.addEventListener('input',previewTeamCode);newTeamCode.addEventListen
 <section class="card composer"><h2>Новое сообщение</h2><p class="muted">Оформите сообщение как в Telegram, при необходимости добавьте изображение или аудиофайл.</p>
 <form method="post" action="/admin/events/{{ event.id }}/messages" enctype="multipart/form-data" id="messageComposer">
   <div class="recipient-grid">
-    <label>Кому<select name="target_type" id="messageTarget"><option value="all">Всем участникам</option><option value="team_members">Каждому участнику выбранной команды лично</option><option value="player">Одному участнику</option><option value="team_chat">В беседу команды</option></select></label>
+    <label>Кому<select name="target_type" id="messageTarget"><option value="all">Всем участникам</option><option value="team_members">Участникам выбранной команды</option><option value="player">Одному участнику</option></select></label>
     <label id="playerTarget" hidden>Участник<select name="player_id">{% for p in players if p.telegram_user_id and p.role.value!='ADMIN' %}<option value="{{ p.id }}">{{ p.full_name }} · {{ p.team.name }}</option>{% endfor %}</select></label>
-    <label id="teamTarget" hidden>Команда<select name="team_id">{% for t in teams %}<option value="{{ t.id }}" data-chat-connected="{{ 'true' if t.telegram_chat_id else 'false' }}">{{ t.name }}{% if not t.telegram_chat_id %} · беседа не подключена{% endif %}</option>{% endfor %}</select><span class="muted" id="teamTargetHint"></span></label>
+    <label id="teamTarget" hidden>Команда<select name="team_id">{% for t in teams %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select><span class="muted">Бот отправит отдельную копию каждому активному участнику команды.</span></label>
   </div>
   <div class="composer-main"><label>Текст сообщения</label>
     <div class="format-toolbar" aria-label="Форматирование">
@@ -393,8 +393,8 @@ newTeamName.addEventListener('input',previewTeamCode);newTeamCode.addEventListen
 <aside class="card"><h2>Предпросмотр</h2><div class="message-preview"><div class="telegram-bubble" id="messagePreview"><span class="preview-placeholder">Здесь появится текст сообщения</span></div></div><p class="muted format-help">Telegram поддерживает жирный, курсив, подчёркивание, зачёркивание, ссылки и моноширинный текст. Смайлики можно вводить и с обычной клавиатуры.</p></aside>
 </div>
 <script>
-const msg=document.getElementById('richMessage'),preview=document.getElementById('messagePreview'),target=document.getElementById('messageTarget'),playerTarget=document.getElementById('playerTarget'),teamTarget=document.getElementById('teamTarget'),teamSelect=teamTarget.querySelector('select'),teamTargetHint=document.getElementById('teamTargetHint');
-function syncTarget(){const teamMode=['team_members','team_chat'].includes(target.value);playerTarget.hidden=target.value!=='player';playerTarget.querySelector('select').disabled=playerTarget.hidden;teamTarget.hidden=!teamMode;teamSelect.disabled=!teamMode;teamTargetHint.textContent=target.value==='team_members'?'Бот отправит отдельную копию каждому активному участнику этой команды.':'Сообщение будет отправлено один раз в подключённую командную беседу.';for(const option of teamSelect.options)option.disabled=target.value==='team_chat'&&option.dataset.chatConnected!=='true'}
+const msg=document.getElementById('richMessage'),preview=document.getElementById('messagePreview'),target=document.getElementById('messageTarget'),playerTarget=document.getElementById('playerTarget'),teamTarget=document.getElementById('teamTarget'),teamSelect=teamTarget.querySelector('select');
+function syncTarget(){const teamMode=target.value==='team_members';playerTarget.hidden=target.value!=='player';playerTarget.querySelector('select').disabled=playerTarget.hidden;teamTarget.hidden=!teamMode;teamSelect.disabled=!teamMode}
 function updatePreview(){const value=msg.value.trim();preview.innerHTML=value||'<span class="preview-placeholder">Здесь появится текст сообщения</span>'}
 function insertText(before,after=''){const start=msg.selectionStart,end=msg.selectionEnd,selected=msg.value.slice(start,end)||'текст';msg.setRangeText(before+selected+after,start,end,'end');msg.focus();updatePreview()}
 document.querySelectorAll('[data-wrap]').forEach(button=>button.addEventListener('click',()=>{const tag=button.dataset.wrap;insertText(`<${tag}>`,`</${tag}>`)}));

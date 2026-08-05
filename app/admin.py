@@ -2859,11 +2859,6 @@ async def send_message(
         ]
         if not targets:
             raise HTTPException(409, "В этой команде нет активных участников, подключённых к Telegram")
-    elif target_type == "team_chat":
-        team = db.get(Team, team_id)
-        if not team or team.event_id != event_id or not team.telegram_chat_id:
-            raise HTTPException(400, "У команды не указан Telegram chat ID")
-        targets = [team.telegram_chat_id]
     else:
         raise HTTPException(400, "Неизвестный получатель")
     try:
