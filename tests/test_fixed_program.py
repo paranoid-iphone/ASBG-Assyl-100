@@ -44,6 +44,8 @@ def test_fixed_program_preserves_existing_questions_and_is_idempotent():
         assert test_stage.title_kk == "0 кезең · Сынақ раунды"
         assert len(test_stage.questions) == 1
         assert test_stage.questions[0].team_points == 0
+        choice_stage = db.scalar(select(Stage).where(Stage.event_id == event.id, Stage.system_key == "choice"))
+        assert choice_stage.default_submission_seconds == 60
         assert db.scalar(select(func.count(EventSlide.id)).where(EventSlide.event_id == event.id)) == 2
 
 
@@ -70,6 +72,8 @@ def test_existing_choice_and_detective_stages_are_reused():
         db.commit()
 
         assert choice.system_key == "choice"
+        assert choice.default_submission_seconds == 60
+        assert choice.questions[0].submission_seconds == 60
         assert detective.system_key == "detective"
 
 

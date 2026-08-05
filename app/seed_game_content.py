@@ -153,7 +153,7 @@ def add_question(stage: Stage, position: int, data: dict, question_type: Questio
         correct_answer_kk=data["answer_kk"],
         explanation_kk=data["explanation_kk"],
         duration_seconds=data.get("duration", 60),
-        submission_seconds=20,
+        submission_seconds=60 if question_type in {QuestionType.CHOICE, QuestionType.CHOICE_EXPLANATION} else 20,
         personal_answers_enabled=False,
         team_answers_enabled=True,
         personal_points=0,

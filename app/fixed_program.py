@@ -50,6 +50,7 @@ FIXED_STAGES = (
         "choice", "2 этап · Выбор решения", "2 кезең · Шешімді таңдау", StageType.QUIZ,
         "Задачи с выбором одного варианта и, при необходимости, объяснением.",
         "Бір нұсқаны және қажет болса түсіндірмені таңдауға арналған тапсырмалар.",
+        submission=60,
     ),
     StageDefinition(
         "detective", "3 этап · Детектив", "3 кезең · Детектив", StageType.DETECTIVE,
@@ -150,6 +151,15 @@ def ensure_fixed_program(db: Session, event: Event) -> GameProgram:
     for practice_question in test_stage.questions:
         practice_question.personal_points = 0
         practice_question.team_points = 0
+
+    choice_stage = next(stage for stage in ordered_stages if stage.system_key == "choice")
+    # Upgrade the old short default while preserving any custom value that an
+    # organizer has already deliberately configured.
+    if choice_stage.default_submission_seconds in {20, 30}:
+        choice_stage.default_submission_seconds = 60
+    for choice_question in choice_stage.questions:
+        if choice_question.submission_seconds in {20, 30}:
+            choice_question.submission_seconds = 60
 
     if not event.slides_initialized:
         if not event.slides:
