@@ -249,9 +249,9 @@ def generate_cases_for_stage(db: Session, stage: Stage) -> list[DetectiveCase]:
         players = db.scalars(
             select(Player).where(Player.team_id == team.id, Player.active.is_(True)).order_by(Player.id)
         ).all()
-        if not 8 <= len(players) <= 10:
+        if not 1 <= len(players) <= 10:
             raise ValueError(
-                f"В команде «{team.name}» должно быть от 8 до 10 активных игроков; сейчас {len(players)}."
+                f"В команде «{team.name}» должен быть хотя бы один активный игрок и не более 10; сейчас {len(players)}."
             )
         old = db.scalar(select(DetectiveCase).where(DetectiveCase.stage_id == stage.id, DetectiveCase.team_id == team.id))
         if old:
@@ -296,7 +296,8 @@ def generate_cases_for_stage(db: Session, stage: Stage) -> list[DetectiveCase]:
             packets[player.id].append(fact)
         extra_recipients = list(shuffled_players)
         rng.shuffle(extra_recipients)
-        for player, fact in zip(extra_recipients, shuffled_facts[len(players):]):
+        for offset, fact in enumerate(shuffled_facts[len(players):]):
+            player = extra_recipients[offset % len(extra_recipients)]
             packets[player.id].append(fact)
 
         for position, player in enumerate(players, 1):

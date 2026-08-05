@@ -60,6 +60,31 @@ def test_generator_creates_shared_case_and_one_clue_per_player():
             assert sorted(len(packet) for packet in packets) == ([1] * (2 * len(case.clues) - 10) + [2] * (10 - len(case.clues)))
 
 
+def test_detective_can_be_rehearsed_with_one_or_two_players():
+    with SessionLocal() as db:
+        event = Event(name="Small rehearsal")
+        db.add(event); db.flush()
+        create_team_with_players(db, event, "Solo", "SOLO", 1)
+        create_team_with_players(db, event, "Pair", "PAIR", 2)
+        stage = Stage(event_id=event.id, title="Cases", stage_type=StageType.DETECTIVE)
+        db.add(stage); db.flush()
+
+        cases = generate_cases_for_stage(db, stage)
+        packet_sizes = {
+            case.team.name: sorted(len(json.loads(clue.predicate_json)["clues"]) for clue in case.clues)
+            for case in cases
+        }
+        assert packet_sizes["Solo"] == [10]
+        assert packet_sizes["Pair"] == [5, 5]
+        for case in cases:
+            numbers = [
+                number
+                for clue in case.clues
+                for number in json.loads(clue.predicate_json)["clues"]
+            ]
+            assert sorted(numbers) == list(range(1, 11))
+
+
 def test_detective_answer_is_single_use_and_ranked():
     with SessionLocal() as db:
         event = Event(name="Detective")
