@@ -31,8 +31,8 @@ def ensure_schema_compatibility():
     columns = {column["name"] for column in inspect(engine).get_columns("stages")}
     additions = {
         "system_key": "VARCHAR(40)",
-        "default_duration_seconds": "INTEGER NOT NULL DEFAULT 60",
-        "default_submission_seconds": "INTEGER NOT NULL DEFAULT 20",
+        "default_duration_seconds": "INTEGER NOT NULL DEFAULT 180",
+        "default_submission_seconds": "INTEGER NOT NULL DEFAULT 60",
         "default_team_points": "FLOAT NOT NULL DEFAULT 5",
     }
     with engine.begin() as connection:
@@ -55,6 +55,9 @@ def ensure_schema_compatibility():
         "pause_snapshot_json": "TEXT NOT NULL DEFAULT ''",
         "current_slide_id": "INTEGER",
         "slides_initialized": "BOOLEAN NOT NULL DEFAULT FALSE",
+        "timings_v2_applied": "BOOLEAN NOT NULL DEFAULT FALSE",
+        "kazakh_primary_applied": "BOOLEAN NOT NULL DEFAULT FALSE",
+        "screen_theme": "VARCHAR(20) NOT NULL DEFAULT 'OUTDOOR'",
     }
     with engine.begin() as connection:
         for name, definition in game_additions.items():

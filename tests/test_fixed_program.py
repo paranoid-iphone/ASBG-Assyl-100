@@ -75,7 +75,7 @@ def test_combined_demo_stage_is_split_into_what_where_when():
         assert question_titles["where"] == ["Исчезнувшие следы"]
         assert question_titles["when"] == ["Братья и сёстры"]
         assert all(
-            question.submission_seconds == 40
+            question.submission_seconds == 60
             for key in ("what", "where", "when")
             for question in db.scalars(select(Question).where(Question.stage_id == stages[key].id)).all()
         )
@@ -84,6 +84,8 @@ def test_combined_demo_stage_is_split_into_what_where_when():
         assert test_stage.title_kk == "0 кезең · Сынақ раунды"
         assert len(test_stage.questions) == 1
         assert test_stage.questions[0].team_points == 0
+        assert test_stage.questions[0].duration_seconds == 180
+        assert test_stage.questions[0].submission_seconds == 60
         choice_stage = db.scalar(select(Stage).where(Stage.event_id == event.id, Stage.system_key == "choice"))
         assert choice_stage.default_submission_seconds == 60
         assert db.scalar(select(func.count(EventSlide.id)).where(EventSlide.event_id == event.id)) == 2

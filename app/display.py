@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from .database import get_db
 from .detective_runtime import finish_detective_stage, start_detective_stage
-from .models import Answer, AnswerScope, CaptainElection, DetectiveSubmission, Event, EventSlide, GameProgram, GameProgramStage, PlayerRole, Question, QuestionStatus, Stage, StageType, Team
+from .models import Answer, AnswerScope, CaptainElection, DetectiveCase, DetectiveSubmission, Event, EventSlide, GameProgram, GameProgramStage, PlayerRole, Question, QuestionStatus, Stage, StageType, Team
 from .config import get_settings
 from .captain_elections import ELECTION_DURATION_SECONDS, start_captain_election_for_team
 from .services import leaderboard, set_question_status
@@ -54,7 +54,7 @@ def screen_state(token: str, db: Session = Depends(get_db)):
     elapsed = (datetime.utcnow() - event.timer_started_at).total_seconds() if event.timer_started_at else None
     remaining = max(0, event.timer_duration_seconds - int(elapsed)) if elapsed is not None else (
         event.timer_duration_seconds
-        if event.display_mode in {"TIMER_READY", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION_PAUSED", "CAPTAIN_ELECTION_READY"}
+        if event.display_mode in {"TIMER_READY", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION_PAUSED", "CAPTAIN_ELECTION_READY", "DETECTIVE"}
         else None
     )
     active_teams = [team for team in event.teams if team.active]
@@ -71,15 +71,33 @@ def screen_state(token: str, db: Session = Depends(get_db)):
         ]
     detective_stage = db.get(Stage, event.current_detective_stage_id) if event.current_detective_stage_id else None
     stored_slide = db.get(EventSlide, event.current_slide_id) if event.current_slide_id else None
+    has_reserve_questions = db.scalar(
+        select(Question.id).join(Stage).where(
+            Stage.event_id == event.id, Stage.system_key == "reserve"
+        ).limit(1)
+    ) is not None
     detective_answered = db.scalar(
         select(__import__("sqlalchemy").func.count(DetectiveSubmission.id))
         .where(DetectiveSubmission.stage_id == detective_stage.id)
     ) if detective_stage else 0
+    sample_detective_case = db.scalar(
+        select(DetectiveCase).where(DetectiveCase.stage_id == detective_stage.id).order_by(DetectiveCase.id)
+    ) if detective_stage else None
+    detective_solution = {}
+    detective_validation = {}
+    if sample_detective_case:
+        try:
+            detective_solution = __import__("json").loads(sample_detective_case.solution_json or "{}")
+            detective_validation = __import__("json").loads(sample_detective_case.validation_json or "{}")
+        except (TypeError, ValueError):
+            pass
     return {
         "event": event.name,
         "description": event.description,
         "mode": event.display_mode,
         "display_language": event.display_language,
+        "screen_theme": event.screen_theme,
+        "has_reserve_questions": has_reserve_questions,
         "question": None if not question else {
             "position": question.position,
             "type": question.question_type.value,
@@ -125,6 +143,9 @@ def screen_state(token: str, db: Session = Depends(get_db)):
             "rules_kk": detective_stage.description_kk or "Барлық командалар бір істі зерттейді. Әр қатысушы жеке айғақ алды. Деректерді біріктіріңіз; капитан бір ғана соңғы жауапты растай алады.",
             "answered": detective_answered,
             "total": len([team for team in event.teams if team.active]),
+            "correct_answer": sample_detective_case.correct_option if sample_detective_case else detective_solution.get("culprit", ""),
+            "explanation_ru": detective_validation.get("reason", ""),
+            "explanation_kk": "Виктор картаны тапқан, мұрағат жанындағы камерадағы адаммен сәйкес келеді; қалғандарының расталған алибиі бар." if sample_detective_case else "",
         },
         "teams": board["teams"][:10],
         "server_time": datetime.utcnow().isoformat(),
@@ -340,6 +361,13 @@ async def advance_screen(token: str, db: Session = Depends(get_db)):
             raise HTTPException(409, "Вопрос программы не найден")
         push_screen_history(event)
         return await activate_program_item(db, event, ("question", question))
+    if event.display_mode == "DETECTIVE_ANSWER":
+        if not event.current_detective_stage_id:
+            raise HTTPException(409, "Детективный этап не найден")
+        push_screen_history(event)
+        event.display_mode = "STAGE_COMPLETE"
+        db.commit()
+        return {"action": "stage_complete", "stage_id": event.current_detective_stage_id}
     if event.display_mode == "STAGE_COMPLETE":
         items = ordered_program_items(db, event.id)
         current_index = next((index for index, (kind, content) in enumerate(items) if (
@@ -354,7 +382,7 @@ async def advance_screen(token: str, db: Session = Depends(get_db)):
             if running_program:
                 running_program.status = "FINISHED"
                 running_program.finished_at = datetime.utcnow()
-            event.display_mode = "WELCOME"
+            event.display_mode = "GAME_COMPLETE"
             event.current_question_id = None
             event.current_detective_stage_id = None
             db.commit()
@@ -392,9 +420,8 @@ async def advance_screen(token: str, db: Session = Depends(get_db)):
         if elapsed < event.timer_duration_seconds and answered < active_teams:
             return {"action": "detective_running", "answered": answered, "total": active_teams}
         push_screen_history(event)
-        completed_stage_id = stage.id
         finish_detective_stage(db, event, stage, "screen")
-        return await next_question(token, db, "detective", completed_stage_id)
+        return {"action": "detective_answer", "stage_id": stage.id}
     items = ordered_program_items(db, event.id)
     current = db.get(Question, event.current_question_id) if event.current_question_id else None
 
@@ -547,6 +574,10 @@ def adjust_screen_timer(token: str, seconds: int, db: Session = Depends(get_db))
 @router.post("/api/screen/{token}/timer/start")
 async def start_screen_timer(token: str, db: Session = Depends(get_db)):
     event = event_by_token(db, token)
+    if event.display_mode == "DETECTIVE" and not event.timer_started_at:
+        event.timer_started_at = datetime.utcnow()
+        db.commit()
+        return {"action": "timer_start", "mode": event.display_mode}
     if event.display_mode == "CAPTAIN_ELECTION_READY":
         missing_teams = [team for team in event.teams if team.active and team.name in teams_without_captain(event)]
         if not missing_teams:
@@ -598,12 +629,15 @@ async def start_screen_timer(token: str, db: Session = Depends(get_db)):
 @router.post("/api/screen/{token}/timer/pause")
 def pause_screen_timer(token: str, db: Session = Depends(get_db)):
     event = event_by_token(db, token)
-    if event.display_mode not in {"TIMER", "SUBMISSION"} or not event.timer_started_at:
+    if event.display_mode not in {"TIMER", "SUBMISSION", "DETECTIVE"} or not event.timer_started_at:
         raise HTTPException(409, "Запущенного таймера нет")
     elapsed = int((datetime.utcnow() - event.timer_started_at).total_seconds())
     event.timer_duration_seconds = max(0, event.timer_duration_seconds - elapsed)
     event.timer_started_at = None
-    event.display_mode = "TIMER_PAUSED" if event.display_mode == "TIMER" else "SUBMISSION_PAUSED"
+    if event.display_mode == "TIMER":
+        event.display_mode = "TIMER_PAUSED"
+    elif event.display_mode == "SUBMISSION":
+        event.display_mode = "SUBMISSION_PAUSED"
     db.commit()
     return {"action": "timer_pause", "remaining": event.timer_duration_seconds}
 
@@ -611,6 +645,14 @@ def pause_screen_timer(token: str, db: Session = Depends(get_db)):
 @router.post("/api/screen/{token}/timer/reset")
 def reset_screen_timer(token: str, db: Session = Depends(get_db)):
     event = event_by_token(db, token)
+    if event.display_mode == "DETECTIVE":
+        stage = db.get(Stage, event.current_detective_stage_id) if event.current_detective_stage_id else None
+        if not stage:
+            raise HTTPException(409, "Активный детективный этап не найден")
+        event.timer_duration_seconds = stage.detective_duration_seconds
+        event.timer_started_at = None
+        db.commit()
+        return {"action": "timer_reset", "remaining": event.timer_duration_seconds}
     question = db.get(Question, event.current_question_id) if event.current_question_id else None
     if not question:
         raise HTTPException(409, "Активного вопроса нет")
@@ -625,6 +667,40 @@ def reset_screen_timer(token: str, db: Session = Depends(get_db)):
     event.timer_started_at = None
     db.commit()
     return {"action": "timer_reset", "remaining": event.timer_duration_seconds}
+
+
+@router.post("/api/screen/{token}/timer/finish")
+def finish_screen_timer(token: str, db: Session = Depends(get_db)):
+    event = event_by_token(db, token)
+    if event.display_mode not in {
+        "TIMER_READY", "TIMER", "TIMER_PAUSED",
+        "SUBMISSION_READY", "SUBMISSION", "SUBMISSION_PAUSED", "DETECTIVE",
+    }:
+        raise HTTPException(409, "На текущем слайде нет управляемого таймера")
+    elapsed = int((datetime.utcnow() - event.timer_started_at).total_seconds()) if event.timer_started_at else 0
+    event.timer_duration_seconds = max(0, elapsed)
+    db.commit()
+    return {"action": "timer_finish", "remaining": 0}
+
+
+@router.post("/api/screen/{token}/complete-game")
+def complete_game(token: str, db: Session = Depends(get_db)):
+    event = event_by_token(db, token)
+    if event.display_mode != "RESERVE_READY":
+        raise HTTPException(409, "Завершение доступно только перед дополнительными вопросами")
+    running_program = db.scalar(select(GameProgram).where(
+        GameProgram.event_id == event.id, GameProgram.status == "RUNNING"
+    ).order_by(GameProgram.started_at.desc()))
+    if running_program:
+        running_program.status = "FINISHED"
+        running_program.finished_at = datetime.utcnow()
+    push_screen_history(event)
+    event.display_mode = "GAME_COMPLETE"
+    event.current_question_id = None
+    event.current_detective_stage_id = None
+    event.timer_started_at = None
+    db.commit()
+    return {"action": "finished"}
 
 
 @router.post("/api/screen/{token}/next")

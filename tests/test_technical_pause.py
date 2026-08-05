@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.database import Base, SessionLocal, engine
 from app.main import app
-from app.models import Event, GameProgram, Player, PlayerRole, Question, Stage, Team
+from app.models import DetectiveStatus, Event, GameProgram, Player, PlayerRole, Question, Stage, StageType, Team
 
 
 def setup_function():
@@ -56,4 +56,34 @@ def test_technical_pause_unlocks_player_edit_and_resumes_timer():
         assert program.status == "RUNNING"
         assert event.display_mode == "TIMER"
         assert 45 <= event.timer_duration_seconds <= 55
+        assert event.timer_started_at is not None
+
+
+def test_technical_pause_stops_and_resumes_detective_timer():
+    with SessionLocal() as db:
+        event = Event(
+            name="Detective pause", display_mode="DETECTIVE",
+            timer_duration_seconds=120,
+            timer_started_at=datetime.utcnow() - timedelta(seconds=10),
+        )
+        db.add(event); db.flush()
+        stage = Stage(
+            event_id=event.id, title="Detective", stage_type=StageType.DETECTIVE,
+            detective_status=DetectiveStatus.RUNNING,
+        )
+        program = GameProgram(event_id=event.id, title="Main", status="RUNNING")
+        db.add_all([stage, program]); db.flush()
+        event.current_detective_stage_id = stage.id
+        db.commit()
+        event_id = event.id
+
+    auth = ("admin", "change-me")
+    with TestClient(app) as client:
+        assert client.post(f"/admin/events/{event_id}/live/pause", auth=auth).status_code == 200
+        assert client.post(f"/admin/events/{event_id}/live/resume", auth=auth).status_code == 200
+
+    with SessionLocal() as db:
+        event = db.get(Event, event_id)
+        assert event.display_mode == "DETECTIVE"
+        assert 105 <= event.timer_duration_seconds <= 115
         assert event.timer_started_at is not None

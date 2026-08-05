@@ -48,4 +48,5 @@ def test_export_then_import_content():
         question = db.scalar(select(Question).where(Question.stage_id == stage.id))
         assert stage.title_kk == "Логика"
         assert question.text_kk == "Сұрақ"
-        assert question.duration_seconds == 75
+        assert question.duration_seconds == 180
+        assert question.submission_seconds == 60

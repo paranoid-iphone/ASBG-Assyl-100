@@ -7,7 +7,7 @@ from app.database import Base, SessionLocal, engine
 from app.main import app
 from app.models import (
     Answer, AnswerScope, Event, GameProgram, GameProgramStage, Player, PlayerRole,
-    Question, QuestionStatus, ScoreAdjustment, Stage, Team, TeamQuestionPrompt,
+    Question, QuestionStatus, ResponseArchive, ScoreAdjustment, Stage, Team, TeamQuestionPrompt,
 )
 
 
@@ -61,6 +61,11 @@ def test_restart_clears_game_answers_but_preserves_roster_captain_and_manual_poi
         assert event.current_question_id is None
         assert question.status == QuestionStatus.DRAFT
         assert db.scalar(select(func.count(Answer.id))) == 0
+        archived = db.scalar(select(ResponseArchive))
+        assert archived.answer_text == "A"
+        assert archived.respondent_name == "Captain"
+        assert archived.is_correct is True
+        assert archived.points_awarded == 5
         assert db.scalar(select(func.count(TeamQuestionPrompt.id))) == 0
         assert db.scalar(select(func.count(ScoreAdjustment.id))) == 1
         assert captain.team_id == team_id

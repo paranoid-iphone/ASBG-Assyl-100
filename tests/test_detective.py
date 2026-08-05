@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 
 from app.admin import finish_live_detective, launch_single_stage, live_control_state
@@ -98,7 +98,10 @@ def test_detective_can_be_rehearsed_with_one_or_two_players():
 
 def test_detective_answer_is_single_use_and_ranked():
     with SessionLocal() as db:
-        event = Event(name="Detective")
+        event = Event(
+            name="Detective", display_mode="DETECTIVE",
+            timer_duration_seconds=1200, timer_started_at=datetime.utcnow(),
+        )
         db.add(event)
         db.flush()
         team = create_team_with_players(db, event, "One", "ONE")
@@ -176,5 +179,49 @@ def test_captain_gets_options_and_admin_can_finish_detective_early():
         finish_live_detective(event.id, db, "test")
         db.refresh(event); db.refresh(stage)
         assert stage.detective_status == DetectiveStatus.FINISHED
-        assert event.display_mode == "STAGE_COMPLETE"
+        assert event.display_mode == "DETECTIVE_ANSWER"
         assert event.current_detective_stage_id == stage.id
+
+
+def test_detective_timer_can_pause_and_resume():
+    with SessionLocal() as db:
+        event = Event(
+            name="Detective timer", display_mode="DETECTIVE",
+            timer_duration_seconds=120,
+            timer_started_at=datetime.utcnow() - timedelta(seconds=10),
+        )
+        db.add(event); db.flush()
+        stage = Stage(
+            event_id=event.id, title="Cases", stage_type=StageType.DETECTIVE,
+            detective_status=DetectiveStatus.RUNNING,
+            detective_duration_seconds=120,
+            detective_started_at=event.timer_started_at,
+        )
+        db.add(stage); db.flush()
+        event.current_detective_stage_id = stage.id
+        db.commit()
+        event_id, token = event.id, event.display_token
+
+    with TestClient(app) as client:
+        paused = client.post(f"/api/screen/{token}/timer/pause")
+        assert paused.status_code == 200
+        state = client.get(f"/api/screen/{token}").json()
+        assert state["mode"] == "DETECTIVE"
+        assert state["timer"]["paused"] is True
+        assert 105 <= state["timer"]["remaining"] <= 115
+
+        reset = client.post(f"/api/screen/{token}/timer/reset")
+        assert reset.status_code == 200
+        state = client.get(f"/api/screen/{token}").json()
+        assert state["timer"]["remaining"] == 120
+        assert state["timer"]["paused"] is True
+
+        resumed = client.post(f"/api/screen/{token}/timer/start")
+        assert resumed.status_code == 200
+        state = client.get(f"/api/screen/{token}").json()
+        assert state["timer"]["running"] is True
+
+    with SessionLocal() as db:
+        event = db.get(Event, event_id)
+        assert event.display_mode == "DETECTIVE"
+        assert event.timer_started_at is not None

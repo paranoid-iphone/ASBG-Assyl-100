@@ -62,16 +62,19 @@ class Event(Base):
     current_detective_stage_id: Mapped[int | None] = mapped_column(nullable=True)
     current_slide_id: Mapped[int | None] = mapped_column(nullable=True)
     timer_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    timer_duration_seconds: Mapped[int] = mapped_column(Integer, default=60)
-    default_question_duration: Mapped[int] = mapped_column(Integer, default=60)
+    timer_duration_seconds: Mapped[int] = mapped_column(Integer, default=180)
+    default_question_duration: Mapped[int] = mapped_column(Integer, default=180)
     default_personal_points: Mapped[float] = mapped_column(Float, default=1)
     default_team_points: Mapped[float] = mapped_column(Float, default=5)
     timer_sound_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    display_language: Mapped[str] = mapped_column(String(10), default="BOTH")
+    display_language: Mapped[str] = mapped_column(String(10), default="KK")
+    screen_theme: Mapped[str] = mapped_column(String(20), default="OUTDOOR")
     screen_history_json: Mapped[str] = mapped_column(Text, default="[]")
     screen_future_json: Mapped[str] = mapped_column(Text, default="[]")
     pause_snapshot_json: Mapped[str] = mapped_column(Text, default="")
     slides_initialized: Mapped[bool] = mapped_column(Boolean, default=False)
+    timings_v2_applied: Mapped[bool] = mapped_column(Boolean, default=False)
+    kazakh_primary_applied: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     teams: Mapped[list[Team]] = relationship(back_populates="event", cascade="all, delete-orphan")
@@ -172,8 +175,8 @@ class Stage(Base):
     detective_duration_seconds: Mapped[int] = mapped_column(Integer, default=1200)
     detective_points: Mapped[str] = mapped_column(String(200), default="30,25,20,17,14,10")
     detective_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    default_duration_seconds: Mapped[int] = mapped_column(Integer, default=60)
-    default_submission_seconds: Mapped[int] = mapped_column(Integer, default=20)
+    default_duration_seconds: Mapped[int] = mapped_column(Integer, default=180)
+    default_submission_seconds: Mapped[int] = mapped_column(Integer, default=60)
     default_team_points: Mapped[float] = mapped_column(Float, default=5)
 
     event: Mapped[Event] = relationship(back_populates="stages")
@@ -239,8 +242,8 @@ class Question(Base):
     team_answers_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     personal_points: Mapped[float] = mapped_column(Float, default=1)
     team_points: Mapped[float] = mapped_column(Float, default=5)
-    duration_seconds: Mapped[int] = mapped_column(Integer, default=60)
-    submission_seconds: Mapped[int] = mapped_column(Integer, default=20)
+    duration_seconds: Mapped[int] = mapped_column(Integer, default=180)
+    submission_seconds: Mapped[int] = mapped_column(Integer, default=60)
     question_type: Mapped[QuestionType] = mapped_column(SQLEnum(QuestionType), default=QuestionType.TEXT)
     options_json: Mapped[str] = mapped_column(Text, default="[]")
     show_anonymous_answers: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -402,6 +405,55 @@ class ScoreAdjustment(Base):
     points: Mapped[float] = mapped_column(Float)
     reason: Mapped[str] = mapped_column(String(300))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class CommunicationVote(Base):
+    __tablename__ = "communication_votes"
+    __table_args__ = (UniqueConstraint("event_id", "voter_player_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("games.id"), index=True)
+    team_id: Mapped[int] = mapped_column(ForeignKey("teams.id"), index=True)
+    voter_player_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
+    candidate_player_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    voter: Mapped[Player] = relationship(foreign_keys=[voter_player_id])
+    candidate: Mapped[Player] = relationship(foreign_keys=[candidate_player_id])
+
+
+class EventFeedback(Base):
+    __tablename__ = "event_feedback"
+    __table_args__ = (UniqueConstraint("event_id", "player_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("games.id"), index=True)
+    player_id: Mapped[int] = mapped_column(ForeignKey("players.id"))
+    rating: Mapped[int] = mapped_column(Integer)
+    review: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    player: Mapped[Player] = relationship()
+
+
+class ResponseArchive(Base):
+    __tablename__ = "response_archive"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("games.id"), index=True)
+    program_id: Mapped[int | None] = mapped_column(ForeignKey("game_programs.id"), nullable=True, index=True)
+    run_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    kind: Mapped[str] = mapped_column(String(30))
+    stage_title: Mapped[str] = mapped_column(String(200))
+    question_title: Mapped[str] = mapped_column(String(240))
+    team_name: Mapped[str] = mapped_column(String(120), default="")
+    respondent_name: Mapped[str] = mapped_column(String(160), default="")
+    answer_text: Mapped[str] = mapped_column(Text)
+    explanation: Mapped[str] = mapped_column(Text, default="")
+    is_correct: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    points_awarded: Mapped[float] = mapped_column(Float, default=0)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime)
+    archived_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class AuditLog(Base):

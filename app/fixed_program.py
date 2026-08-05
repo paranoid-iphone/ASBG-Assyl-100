@@ -22,8 +22,8 @@ class StageDefinition:
     stage_type: StageType
     description: str
     description_kk: str
-    duration: int = 60
-    submission: int = 30
+    duration: int = 180
+    submission: int = 60
     points: float = 5
 
 
@@ -38,19 +38,16 @@ FIXED_STAGES = (
         "what", "1 этап · Что?", "1 кезең · Не?", StageType.QUIZ,
         "Вопросы блока «Что?» со свободным командным ответом.",
         "«Не?» блогының еркін командалық жауабы бар сұрақтары.",
-        submission=40,
     ),
     StageDefinition(
         "where", "1 этап · Где?", "1 кезең · Қайда?", StageType.QUIZ,
         "Вопросы блока «Где?» со свободным командным ответом.",
         "«Қайда?» блогының еркін командалық жауабы бар сұрақтары.",
-        submission=40,
     ),
     StageDefinition(
         "when", "1 этап · Когда?", "1 кезең · Қашан?", StageType.QUIZ,
         "Вопросы блока «Когда?» со свободным командным ответом.",
         "«Қашан?» блогының еркін командалық жауабы бар сұрақтары.",
-        submission=40,
     ),
     StageDefinition(
         "choice", "2 этап · Выбор решения", "2 кезең · Шешімді таңдау", StageType.QUIZ,
@@ -158,7 +155,7 @@ def _install_first_stage_questions(db: Session, stages: list[Stage]) -> None:
             text=data["text"], text_kk=data["text_kk"],
             correct_answer=data["answer"], correct_answer_kk=data["answer_kk"],
             explanation=data["explanation"], explanation_kk=data["explanation_kk"],
-            duration_seconds=60, submission_seconds=40,
+            duration_seconds=180, submission_seconds=60,
             personal_answers_enabled=False, team_answers_enabled=True,
             personal_points=0, team_points=5, show_anonymous_answers=True,
         ))
@@ -257,8 +254,8 @@ def ensure_fixed_program(db: Session, event: Event) -> GameProgram:
             team_answers_enabled=True,
             personal_points=0,
             team_points=0,
-            duration_seconds=30,
-            submission_seconds=20,
+            duration_seconds=180,
+            submission_seconds=60,
             show_anonymous_answers=True,
         ))
     for practice_question in test_stage.questions:

@@ -136,11 +136,17 @@ def submit_detective_answer(db: Session, player: Player, option: str) -> Detecti
         raise GameError("Сейчас детективная игра не запущена.")
     if case.submission:
         raise GameError("Ответ вашей команды уже зафиксирован и не может быть изменён.")
+    event = player.team.event
+    if event.display_mode != "DETECTIVE" or not event.timer_started_at:
+        raise GameError("Сейчас ответы детективной игры не принимаются.")
     options = __import__("json").loads(case.options_json)
     if option not in options:
         raise GameError("Такого варианта ответа нет.")
     now = datetime.utcnow()
-    elapsed = max(0, int((now - case.stage.detective_started_at).total_seconds())) if case.stage.detective_started_at else 0
+    current_run_elapsed = max(0, int((now - event.timer_started_at).total_seconds()))
+    if current_run_elapsed >= event.timer_duration_seconds:
+        raise GameError("Время детективной игры истекло.")
+    elapsed = max(0, case.stage.detective_duration_seconds - event.timer_duration_seconds) + current_run_elapsed
     correct = option == case.correct_option
     rank = None
     points = 0.0

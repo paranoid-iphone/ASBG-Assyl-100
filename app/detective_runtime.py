@@ -132,6 +132,9 @@ def finish_detective_stage(
 ) -> None:
     stage.detective_status = DetectiveStatus.FINISHED
     event.timer_started_at = None
-    event.current_detective_stage_id = None
+    # Preserve the stage until its solution and completion slides have been
+    # shown. Clearing it here made the public screen lose the correct answer.
+    event.current_detective_stage_id = stage.id
+    event.display_mode = "DETECTIVE_ANSWER"
     audit(db, actor, "detective.finish", stage)
     db.commit()

@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 
 from .config import get_settings
 from .database import SessionLocal
-from .models import Answer, AnswerScope, CaptainElection, CaptainVote, DetectiveSubmission, Event, PendingRegistration, Player, PlayerRole, Question, QuestionType, Team, TeamQuestionPrompt
+from .models import Answer, AnswerScope, CaptainElection, CaptainVote, CommunicationVote, DetectiveSubmission, Event, EventFeedback, PendingRegistration, Player, PlayerRole, Question, QuestionType, Team, TeamQuestionPrompt
 from .services import (
     GameError, active_detective_case, active_question, detective_clue_for_player,
     get_player_by_telegram, leaderboard,
@@ -35,6 +35,7 @@ class InputState(StatesGroup):
     team_answer = State()
     team_explanation = State()
     team_confirm = State()
+    event_review = State()
 
 
 def main_keyboard(role: PlayerRole, language: str = "RU") -> ReplyKeyboardMarkup:
@@ -695,6 +696,96 @@ async def save_answer(message: Message, state: FSMContext, scope: AnswerScope):
         await message.answer(str(exc))
     finally:
         await state.clear()
+
+
+@router.callback_query(F.data.startswith("commvote:"))
+async def communication_vote(callback: CallbackQuery):
+    _, event_id_raw, candidate_id_raw = callback.data.split(":")
+    event_id, candidate_id = int(event_id_raw), int(candidate_id_raw)
+    with SessionLocal() as db:
+        voter = get_player_by_telegram(db, str(callback.from_user.id))
+        candidate = db.get(Player, candidate_id)
+        if (
+            not voter or not voter.team or voter.team.event_id != event_id
+            or not candidate or not candidate.active or candidate.team_id != voter.team_id
+            or candidate.id == voter.id
+        ):
+            await callback.answer("Этот вариант недоступен.", show_alert=True)
+            return
+        existing = db.scalar(select(CommunicationVote).where(
+            CommunicationVote.event_id == event_id,
+            CommunicationVote.voter_player_id == voter.id,
+        ))
+        if existing:
+            text = "Сіз дауыс бердіңіз." if voter.preferred_language == "KK" else "Вы уже проголосовали."
+            await callback.answer(text, show_alert=True)
+            return
+        db.add(CommunicationVote(
+            event_id=event_id, team_id=voter.team_id,
+            voter_player_id=voter.id, candidate_player_id=candidate.id,
+        ))
+        db.commit()
+        kk = voter.preferred_language == "KK"
+        candidate_name = candidate.full_name
+    text = f"✅ Дауыс қабылданды: {candidate_name}" if kk else f"✅ Голос принят: {candidate_name}"
+    await callback.message.edit_text(text, reply_markup=None)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("eventrating:"))
+async def event_rating(callback: CallbackQuery, state: FSMContext):
+    _, event_id_raw, rating_raw = callback.data.split(":")
+    event_id, rating = int(event_id_raw), int(rating_raw)
+    if rating not in range(1, 6):
+        await callback.answer("Оценка недоступна.", show_alert=True)
+        return
+    with SessionLocal() as db:
+        player = get_player_by_telegram(db, str(callback.from_user.id))
+        if not player or not player.team or player.team.event_id != event_id:
+            await callback.answer("Опрос недоступен.", show_alert=True)
+            return
+        existing = db.scalar(select(EventFeedback).where(
+            EventFeedback.event_id == event_id, EventFeedback.player_id == player.id,
+        ))
+        if existing:
+            text = "Сіз іс-шараны бағаладыңыз." if player.preferred_language == "KK" else "Вы уже оценили мероприятие."
+            await callback.answer(text, show_alert=True)
+            return
+        db.add(EventFeedback(event_id=event_id, player_id=player.id, rating=rating))
+        db.commit()
+        kk, player_id = player.preferred_language == "KK", player.id
+    await state.set_state(InputState.event_review)
+    await state.update_data(feedback_event_id=event_id, feedback_player_id=player_id)
+    text = (
+        f"{rating} ⭐ — рақмет! Пікіріңізді бір хабарламамен жазыңыз. Өткізіп жіберу үшін /skip командасын жіберіңіз."
+        if kk else
+        f"{rating} ⭐ — спасибо! Напишите отзыв одним сообщением. Чтобы пропустить, отправьте /skip."
+    )
+    await callback.message.edit_text(text, reply_markup=None)
+    await callback.answer()
+
+
+@router.message(InputState.event_review)
+async def event_review(message: Message, state: FSMContext):
+    data = await state.get_data()
+    review = "" if (message.text or "").strip().lower() == "/skip" else (message.text or "").strip()[:4000]
+    with SessionLocal() as db:
+        player = get_player_by_telegram(db, str(message.from_user.id))
+        feedback = db.scalar(select(EventFeedback).where(
+            EventFeedback.event_id == data.get("feedback_event_id"),
+            EventFeedback.player_id == data.get("feedback_player_id"),
+        ))
+        if not player or not feedback or feedback.player_id != player.id:
+            await state.clear()
+            await message.answer("Опрос больше недоступен.")
+            return
+        feedback.review = review
+        db.commit()
+        kk = player.preferred_language == "KK"
+        role, language = player.role, player.preferred_language
+    await state.clear()
+    text = "Пікіріңізге рақмет!" if kk else "Спасибо за ваш отзыв!"
+    await message.answer(text, reply_markup=main_keyboard(role, language))
 
 
 @router.callback_query(F.data.startswith("captainvote:"))

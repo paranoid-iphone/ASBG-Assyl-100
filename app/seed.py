@@ -46,8 +46,8 @@ def seed():
         db.add(stage); db.flush()
         db.add(Question(
             stage_id=stage.id, title="Тестовый вопрос", text="Текст вопроса задаётся администратором.",
-            correct_answer="Ответ", explanation="Здесь будет пояснение.", position=1, duration_seconds=60,
-            submission_seconds=20, personal_answers_enabled=False, team_answers_enabled=True,
+            correct_answer="Ответ", explanation="Здесь будет пояснение.", position=1, duration_seconds=180,
+            submission_seconds=60, personal_answers_enabled=False, team_answers_enabled=True,
             show_anonymous_answers=True,
             title_kk="Тест сұрағы", text_kk="Сұрақ мәтінін әкімші енгізеді.",
             correct_answer_kk="Жауап", explanation_kk="Мұнда түсіндірме болады.",
@@ -119,7 +119,7 @@ def seed():
                 position=position,
                 title=item[0], text=item[1], correct_answer=item[2], explanation=item[3],
                 title_kk=item[4], text_kk=item[5], correct_answer_kk=item[6], explanation_kk=item[7],
-                duration_seconds=60, submission_seconds=20,
+                duration_seconds=180, submission_seconds=60,
                 personal_answers_enabled=False, team_answers_enabled=True,
                 team_points=5, show_anonymous_answers=True,
             ))

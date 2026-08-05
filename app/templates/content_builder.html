@@ -206,7 +206,7 @@
         <legend>Настройки вопросов</legend>
         <p>Эти значения будут автоматически подставляться в каждый новый вопрос.</p>
         <label>Время вопроса, сек.<input type="number" name="default_duration_seconds" value="{{ event.default_question_duration }}" min="5" max="3600"></label>
-        <label>Время на отправку, сек.<input type="number" name="default_submission_seconds" value="20" min="5" max="300"></label>
+        <label>Время на отправку, сек.<input type="number" name="default_submission_seconds" value="60" min="5" max="300"></label>
         <label>Баллы за вопрос<input type="number" step=".5" name="default_team_points" value="{{ event.default_team_points }}" min="0"></label>
       </fieldset>
       <fieldset class="type-settings detective-settings" data-settings="DETECTIVE" hidden>
@@ -228,7 +228,8 @@
   </details>
 
   <footer class="program-actions">
-    {% if program.status not in ['RUNNING','PAUSED'] and program.stage_links %}<form method="post" action="/admin/events/{{ event.id }}/programs/{{ program.id }}/launch"><button class="green">▶ Запустить игру</button></form>{% endif %}
+    {% if program.status=='DRAFT' and program.stage_links %}<form method="post" action="/admin/events/{{ event.id }}/programs/{{ program.id }}/launch"><button class="green">▶ Запустить игру</button></form>{% endif %}
+    {% if program.status!='DRAFT' and program.stage_links %}<form method="post" action="/admin/events/{{ event.id }}/programs/{{ program.id }}/restart" onsubmit="return confirm('Начать игру заново? Текущие ответы и начисленные баллы будут сохранены в архиве, затем игровое состояние будет очищено.')"><button class="amber">↺ Перезапустить игру</button></form>{% endif %}
     {% if program.status in ['RUNNING','PAUSED'] %}<a class="screen-link" href="/admin/events/{{ event.id }}?tab=live">Перейти к проведению →</a>{% endif %}
   </footer>
 </section>
@@ -236,7 +237,17 @@
 <section class="empty-builder"><div>◫</div><h2>Создайте первую игру</h2><p>После этого внутри неё появятся этапы и вопросы.</p><details class="create-popover" open><summary>＋ Новая игра</summary><form method="post" action="/admin/events/{{ event.id }}/programs" class="stack-form"><label>Название<input name="title" required></label><label>Описание<textarea name="description"></textarea></label><button>Создать игру</button></form></details></section>
 {% endfor %}
 
-<details class="utility-panel"><summary>Импорт и экспорт</summary><div class="utility-content"><a class="screen-link" href="/admin/events/{{ event.id }}/content/export">Скачать JSON</a><form method="post" action="/admin/events/{{ event.id }}/content/import" enctype="multipart/form-data"><input type="file" name="content_file" accept=".json,application/json" required><button>Импортировать</button></form></div></details>
+<details class="utility-panel"><summary>Импорт и экспорт</summary><div class="utility-content">
+  <h3>Полный пакет мероприятия</h3>
+  <p class="muted">Содержит настройки, слайды, этапы всех типов, вопросы и их порядок в программе. Участники, ответы и баллы в файл не попадают.</p>
+  <a class="screen-link" href="/admin/events/{{ event.id }}/package/export">Скачать полный пакет JSON</a>
+  <form method="post" action="/admin/events/{{ event.id }}/package/import" enctype="multipart/form-data" data-json-form>
+    <input type="file" name="package_file" accept=".json,application/json" required>
+    <button>Импортировать полный пакет</button>
+  </form>
+  <p class="muted">Импорт выполняется в пустую программу. Если здесь уже есть этапы, сначала скачайте резервную копию и сделайте полный сброс в Настройках.</p>
+  <details><summary>Старый формат: только этапы и вопросы</summary><div class="utility-content"><a class="screen-link" href="/admin/events/{{ event.id }}/content/export">Скачать старый JSON</a><form method="post" action="/admin/events/{{ event.id }}/content/import" enctype="multipart/form-data"><input type="file" name="content_file" accept=".json,application/json" required><button>Добавить этапы и вопросы</button></form></div></details>
+</div></details>
 <script>
 document.querySelectorAll('[data-stage-form]').forEach((form) => {
   const picker = form.querySelector('[data-stage-type]');

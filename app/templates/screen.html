@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru">
+<html lang="kk">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width">
@@ -17,15 +17,19 @@ body{margin:0;background:#0c1220;color:#f8fafc;font-family:Inter,system-ui;overf
 .timer{font-size:15vw;line-height:1;font-weight:900;font-variant-numeric:tabular-nums;color:#fff}.timer.danger{color:#ff6b6b}
 .answer{font-size:5vw;font-weight:850;margin:.2em 0;color:#7ee7b7;max-width:88vw}.explanation{font-size:1.8vw;color:#c5cee0;max-width:80vw}
 .screen-action{margin-top:2vw;border:1px solid #7794ff;background:#3457d5;color:#fff;border-radius:14px;padding:1vw 2vw;font-size:1.5vw;font-weight:800;cursor:pointer;box-shadow:0 10px 35px #152a7a66}.screen-action:hover{background:#4568e5}.screen-action:disabled{opacity:.5;cursor:wait}
+.choice-actions{display:flex;gap:1.2vw;justify-content:center;margin-top:2.2vw}.choice-actions .finish{background:#fff;color:#9b1836;border:2px solid #c83555}.choice-actions .extra{background:#1749c6;color:#fff;border:2px solid #1749c6}
 .answer-wall{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.2vw;width:min(1200px,90vw);max-height:72vh;overflow:hidden}.answer-card{background:#ffffff12;border:1px solid #ffffff24;border-radius:16px;padding:1.2vw 1.5vw;font-size:1.65vw;text-align:left}.answer-card small{display:block;color:#aeb8ca;margin-top:.5vw}
 .options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.7vw 2vw;max-width:82vw;margin:1.2vw auto 0;text-align:left;font-size:1.55vw;color:#dbe4f7}.option{padding:.55vw 1vw;border-left:3px solid #91a7ff;background:#ffffff0a;border-radius:4px}
 .hint{position:fixed;right:20px;bottom:16px;color:#ffffff88;font-size:13px}.volume{position:fixed;left:20px;bottom:14px;display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;background:#08101dcc;color:#d7deeb;font-size:13px;z-index:5}.volume input{width:150px;accent-color:#91a7ff}.volume output{min-width:38px;text-align:right;font-variant-numeric:tabular-nums}.busy{pointer-events:none}
 .timer-tools{position:fixed;right:20px;top:18px;display:none;gap:8px;z-index:6}.timer-tools.visible{display:flex}.timer-tools button,.music-toggle{border:1px solid #ffffff30;background:#08101ddd;color:#fff;border-radius:9px;padding:9px 12px;font-weight:750;cursor:pointer}.music-toggle{position:fixed;left:20px;top:18px;z-index:6}.music-toggle.active{background:#2945aa}
 .slide-nav{position:fixed;inset:50% 18px auto;display:flex;justify-content:space-between;transform:translateY(-50%);pointer-events:none;z-index:7}.slide-nav button{pointer-events:auto;width:54px;height:70px;border:1px solid #ffffff2b;border-radius:14px;background:#07101ac7;color:#fff;font-size:30px;cursor:pointer;opacity:.55}.slide-nav button:hover,.slide-nav button:focus-visible{opacity:1;background:#2945aa;outline:none}.slide-nav button:disabled{opacity:.18;cursor:wait}
+.primary-kk{font-size:5.4vw;font-weight:900;line-height:1.05;color:inherit;max-width:90vw}.secondary-ru{font-size:1.75vw;line-height:1.25;color:#b7c2d8;margin-top:1vw;max-width:82vw}.support-kk{font-size:2.25vw;font-weight:750;color:inherit}.support-ru{font-size:1.35vw;color:#b7c2d8;margin-top:.45vw}
+body[data-theme="OUTDOOR"]{background:#f5f8ff;color:#071632}body[data-theme="OUTDOOR"] .screen{background:radial-gradient(circle at 85% 12%,#c9dcff 0,transparent 32%),linear-gradient(145deg,#fff,#e8f0ff)}body[data-theme="OUTDOOR"] .description,body[data-theme="OUTDOOR"] .secondary-ru,body[data-theme="OUTDOOR"] .support-ru,body[data-theme="OUTDOOR"] .explanation{color:#354866}body[data-theme="OUTDOOR"] .eyebrow,body[data-theme="OUTDOOR"] .question-title,body[data-theme="OUTDOOR"] .answer-label,body[data-theme="OUTDOOR"] .lang{color:#1749c6}body[data-theme="OUTDOOR"] .timer{color:#071632}body[data-theme="OUTDOOR"] .timer.danger{color:#cf163d}body[data-theme="OUTDOOR"] .answer{color:#087447}body[data-theme="OUTDOOR"] .language-block+.language-block{border-color:#17366535}body[data-theme="OUTDOOR"] .answer-card,body[data-theme="OUTDOOR"] .option{background:#fff;border-color:#244c9b38;color:#071632}body[data-theme="OUTDOOR"] .hint{color:#283c5d}body[data-theme="OUTDOOR"] .volume,body[data-theme="OUTDOOR"] .timer-tools button,body[data-theme="OUTDOOR"] .music-toggle,body[data-theme="OUTDOOR"] .slide-nav button{background:#fff;color:#071632;border-color:#17366555;box-shadow:0 5px 18px #244c9b20}
+body[data-theme="WARM"]{background:#fff7df;color:#251a07}body[data-theme="WARM"] .screen{background:radial-gradient(circle at 85% 12%,#ffd98b 0,transparent 34%),linear-gradient(145deg,#fffdf6,#fff0c9)}body[data-theme="WARM"] .description,body[data-theme="WARM"] .secondary-ru,body[data-theme="WARM"] .support-ru,body[data-theme="WARM"] .explanation{color:#624f2d}body[data-theme="WARM"] .eyebrow,body[data-theme="WARM"] .question-title,body[data-theme="WARM"] .answer-label,body[data-theme="WARM"] .lang{color:#a13d14}body[data-theme="WARM"] .timer{color:#251a07}body[data-theme="WARM"] .timer.danger{color:#c51f3d}
 @media(max-aspect-ratio:1/1){.question{font-size:6vw}.event{font-size:10vw}.description{font-size:4vw}.timer{font-size:22vw}.answer{font-size:8vw}}
 </style>
 </head>
-<body>
+<body data-theme="OUTDOOR">
 <div id="app" class="screen"><div class="center"><div class="event">Подключение…</div></div></div>
 <label id="volumeControl" class="volume">🔊 <input id="volume" type="range" min="0" max="100" step="1" value="55" aria-label="Громкость"><output id="volumeValue">55%</output></label>
 <button id="musicToggle" class="music-toggle">♫ Фоновая музыка</button>
@@ -51,74 +55,101 @@ volumeInput.addEventListener('input',event=>{masterVolume=Number(event.target.va
 
 function render(d){
   const q=d.question||{},ru=q.ru||{},kk=q.kk||{};let html='';
+  document.body.dataset.theme=d.screen_theme||'OUTDOOR';
+  const localized=(kkText,ruText)=>d.display_language==='RU'?ruText:(d.display_language==='BOTH'?`${kkText} / ${ruText}`:kkText);
+  const localizedLines=(kkText,ruText)=>d.display_language==='RU'?ruText:(d.display_language==='BOTH'?`${kkText}<br>${ruText}`:kkText);
+  const centeredLanguages=(kkTitle,ruTitle,kkText='',ruText='')=>{
+    if(d.display_language==='RU')return `<div class="primary-kk">${esc(ruTitle)}</div>${ruText?`<div class="support-kk">${esc(ruText)}</div>`:''}`;
+    if(d.display_language==='KK')return `<div class="primary-kk">${esc(kkTitle)}</div>${kkText?`<div class="support-kk">${esc(kkText)}</div>`:''}`;
+    return `<div class="primary-kk">${esc(kkTitle)}</div><div class="secondary-ru">${esc(ruTitle)}</div>${kkText?`<div class="support-kk">${esc(kkText)}</div>`:''}${ruText?`<div class="support-ru">${esc(ruText)}</div>`:''}`;
+  };
   const block=(lang,data,type)=>{
     const main=type==='answer'?data.answer:data.text;
     const extra=type==='answer'?data.explanation:'';
     return `<div class="language-block"><div class="lang">${lang}</div><div class="${type}">${esc(main||'')}</div>${extra?`<div class="explanation">${esc(extra)}</div>`:''}</div>`;
   };
   if(d.mode==='INTRO'){
-    html=`<div class="eyebrow">Интеллектуальная игра / Зияткерлік ойын</div><div class="center"><div class="event">${esc(d.event)}</div><div class="description">Добро пожаловать! · Қош келдіңіздер!</div></div>`;
+    html=`<div class="eyebrow">${localized('Зияткерлік ойын','Интеллектуальная игра')}</div><div class="center"><div class="event">${esc(d.event)}</div><div class="description">${localized('Қош келдіңіздер!','Добро пожаловать!')}</div></div>`;
   }else if(d.mode==='CAPTAIN_ELECTION_READY'||d.mode==='CAPTAIN_ELECTION_RUNNING'){
     const election=d.captain_election||{},time=d.timer.remaining===null?'01:00':`${String(Math.floor(d.timer.remaining/60)).padStart(2,'0')}:${String(d.timer.remaining%60).padStart(2,'0')}`;
     const ready=d.mode==='CAPTAIN_ELECTION_READY';
-    html=`<div class="eyebrow">Выбор капитанов / Капитандарды таңдау</div><div class="center"><div class="event" style="font-size:4vw">${ready?'Выберите капитанов':'Голосование идёт'}</div><div class="description">Выберите капитана своей команды · Команда капитанын таңдаңыз</div><div class="timer ${d.timer.remaining<=10?'danger':''}" style="font-size:8vw;margin-top:.2em">${time}</div><div class="description">Капитаны выбраны: ${election.selected||0} из ${election.total||0}</div>${ready?'<button type="button" id="electionStartMain" class="screen-action">Разослать голосование за капитана<br><small>Капитанды таңдау дауысын жіберу</small></button>':''}</div>`;
+    const kkTitle=ready?'Капитандарды таңдаңыз':'Дауыс беру жүріп жатыр',ruTitle=ready?'Выберите капитанов':'Голосование идёт';
+    const countKk=`Капитандар таңдалды: ${election.selected||0} / ${election.total||0}`,countRu=`Капитаны выбраны: ${election.selected||0} из ${election.total||0}`;
+    const countHtml=d.display_language==='BOTH'?`<div class="support-kk">${countKk}</div><div class="support-ru">${countRu}</div>`:`<div class="support-kk">${localized(countKk,countRu)}</div>`;
+    html=`<div class="eyebrow">${localized('Капитандарды таңдау','Выбор капитанов')}</div><div class="center">${centeredLanguages(kkTitle,ruTitle,'Команда капитанын таңдаңыз','Выберите капитана своей команды')}<div class="timer ${d.timer.remaining<=10?'danger':''}" style="font-size:8vw;margin-top:.2em">${time}</div>${countHtml}${ready?`<button type="button" id="electionStartMain" class="screen-action">${localized('Капитанды таңдау дауысын жіберу','Разослать голосование за капитана')}</button>`:''}</div>`;
   }else if(d.mode==='CAPTAIN_ELECTION_COMPLETE'){
-    html=`<div class="eyebrow">Выбор капитанов завершён</div><div class="center"><div class="event" style="font-size:4.5vw">Капитаны выбраны!</div><div class="description">Результат отправлен каждому участнику · Нәтиже әр қатысушыға жіберілді</div></div>`;
+    html=`<div class="eyebrow">${localized('Капитандарды таңдау аяқталды','Выбор капитанов завершён')}</div><div class="center">${centeredLanguages('Капитандар таңдалды!','Капитаны выбраны!','Нәтиже әр қатысушыға жіберілді','Результат отправлен каждому участнику')}</div>`;
   }else if(d.mode==='RULES'){
-    html=`<div class="eyebrow">Правила / Ережелер</div><div class="center"><div class="event" style="font-size:4vw">Играйте всей командой</div><div class="description">Слушайте вопрос внимательно. Обсудите одну общую версию. Капитан выбирает отвечающего и подтверждает окончательный ответ в Telegram-боте.<br><br>Сұрақты мұқият тыңдаңыздар. Бір ортақ нұсқаны талқылаңыздар. Капитан жауап берушіні таңдап, соңғы жауапты Telegram-ботта растайды.</div></div>`;
+    html=`<div class="eyebrow">${localized('Ережелер','Правила')}</div><div class="center">${centeredLanguages('Бүкіл командамен ойнаңыздар','Играйте всей командой','Сұрақты мұқият тыңдаңыздар. Бір ортақ нұсқаны талқылаңыздар. Капитан соңғы жауапты Telegram-ботта растайды.','Слушайте вопрос внимательно. Обсудите одну общую версию. Капитан подтверждает окончательный ответ в Telegram-боте.')}</div>`;
   }else if(d.mode==='STAGE_INTRO'){
     const game=d.detective||{},stage=q.stage||{};const isPractice=stage.key==='test';const ruTitle=isPractice?'Этап 0 · Тестовый раунд':stage.ru||game.title_ru||'Следующий этап';const kkTitle=isPractice?'0 кезең · Сынақ раунды':stage.kk||game.title_kk||'Келесі кезең';const ruText=isPractice?'Потренируйтесь обсуждать вопрос, выбирать отвечающего и отправлять ответ. Баллы не начисляются.':stage.description_ru||game.rules_ru||'';const kkText=isPractice?'Сұрақты талқылап, жауап берушіні таңдап, жауап жіберуді жаттықтырыңыздар. Ұпай берілмейді.':stage.description_kk||game.rules_kk||'';
-    html=`<div class="eyebrow">Начало этапа / Кезеңнің басталуы</div><div class="center"><div class="bilingual"><div class="language-block"><div class="lang">Русский</div><div class="event" style="font-size:3.7vw">${esc(ruTitle)}</div><div class="description" style="font-size:1.5vw">${esc(ruText)}</div></div><div class="language-block"><div class="lang">Қазақша</div><div class="event" style="font-size:3.7vw">${esc(kkTitle)}</div><div class="description" style="font-size:1.5vw">${esc(kkText)}</div></div></div></div>`;
+    if(d.display_language==='BOTH') html=`<div class="eyebrow">Кезеңнің басталуы / Начало этапа</div><div class="center"><div class="bilingual"><div class="language-block"><div class="lang">Қазақша</div><div class="event" style="font-size:3.7vw">${esc(kkTitle)}</div><div class="description" style="font-size:1.5vw">${esc(kkText)}</div></div><div class="language-block"><div class="lang">Русский</div><div class="event" style="font-size:3.7vw">${esc(ruTitle)}</div><div class="description" style="font-size:1.5vw">${esc(ruText)}</div></div></div></div>`;
+    else{const title=d.display_language==='KK'?kkTitle:ruTitle,text=d.display_language==='KK'?kkText:ruText;html=`<div class="eyebrow">${localized('Кезеңнің басталуы','Начало этапа')}</div><div class="center"><div class="event">${esc(title)}</div><div class="description">${esc(text)}</div></div>`}
   }else if(d.mode==='QUESTION_INTRO'){
     const isPractice=q.stage?.key==='test';
-    html=`<div class="eyebrow">${isPractice?'Этап 0 · Тестовый раунд':esc(q.stage?.ru||'Этап')} / ${isPractice?'0 кезең · Сынақ раунды':esc(q.stage?.kk||'Кезең')}</div><div class="center"><div class="event">${isPractice?'Тестовый вопрос':'Вопрос №'+(q.position||1)}</div><div class="description">${isPractice?'Сынақ сұрағы':'Сұрақ №'+(q.position||1)}<br><br>Приготовьтесь: вопрос будет показан один раз · Дайындалыңыздар: сұрақ бір рет көрсетіледі</div></div>`;
+    const kkStage=isPractice?'0 кезең · Сынақ раунды':q.stage?.kk||'Кезең',ruStage=isPractice?'Этап 0 · Тестовый раунд':q.stage?.ru||'Этап';
+    html=`<div class="eyebrow">${localized(kkStage,ruStage)}</div><div class="center">${centeredLanguages(isPractice?'Сынақ сұрағы':'Сұрақ №'+(q.position||1),isPractice?'Тестовый вопрос':'Вопрос №'+(q.position||1),'Дайындалыңыздар: сұрақ бір рет көрсетіледі','Приготовьтесь: вопрос будет показан один раз')}</div>`;
   }else if(d.mode==='STAGE_COMPLETE'){
-    const game=d.detective||{},stage=q.stage||{};html=`<div class="eyebrow">Этап завершён / Кезең аяқталды</div><div class="center"><div class="event" style="font-size:4.5vw">${esc(stage.ru||game.title_ru||'Этап завершён')}</div><div class="description">Отличная работа! Переходим дальше.<br>Керемет жұмыс! Келесі кезеңге өтеміз.</div></div>`;
+    const game=d.detective||{},stage=q.stage||{},kkTitle=stage.kk||game.title_kk||'Кезең аяқталды',ruTitle=stage.ru||game.title_ru||'Этап завершён';html=`<div class="eyebrow">${localized('Кезең аяқталды','Этап завершён')}</div><div class="center">${centeredLanguages(kkTitle,ruTitle,'Керемет жұмыс! Келесі кезеңге өтеміз.','Отличная работа! Переходим дальше.')}</div>`;
   }else if(d.mode==='PAUSED'){
-    html=`<div class="eyebrow">Техническая пауза / Техникалық үзіліс</div><div class="center"><div class="event" style="font-size:5vw">Скоро продолжим</div><div class="description">Организаторы вносят необходимые изменения.<br>Ұйымдастырушылар қажетті өзгерістер енгізуде.</div></div>`;
+    html=`<div class="eyebrow">${localized('Техникалық үзіліс','Техническая пауза')}</div><div class="center">${centeredLanguages('Жақында жалғастырамыз','Скоро продолжим','Ұйымдастырушылар қажетті өзгерістер енгізуде.','Организаторы вносят необходимые изменения.')}</div>`;
   }else if(d.mode==='WELCOME'){
-    html=`<div class="eyebrow">Интеллектуальная игра</div><div class="center"><div class="event">${esc(d.event)}</div><div class="description">${esc(d.description)}</div></div>`;
+    html=`<div class="eyebrow">${localized('Зияткерлік ойын','Интеллектуальная игра')}</div><div class="center"><div class="event">${esc(d.event)}</div><div class="description">${esc(d.description)}</div></div>`;
   }else if(d.mode==='RESERVE_READY'){
-    html=`<div class="eyebrow">Дополнительный этап / Қосымша кезең</div><div class="center"><div class="event">Резервный раунд</div><div class="description">Если осталось время, нажмите стрелку вправо, чтобы продолжить игру</div><div class="description">Уақыт қалса, ойынды жалғастыру үшін оң жақ көрсеткіні басыңыз</div></div>`;
+    html=`<div class="eyebrow">${localized('Шешім','Решение')}</div><div class="center">${centeredLanguages('Ойынды аяқтаймыз ба, әлде жалғастырамыз ба?','Завершить игру или продолжить?','Қосымша сұрақтарға өтуге немесе ойынды аяқтауға болады.','Можно перейти к дополнительным вопросам или завершить игру.')}<div class="choice-actions"><button type="button" id="finishGameChoice" class="screen-action finish">${localized('Ойынды аяқтау','Завершить игру')}</button><button type="button" id="extraQuestionsChoice" class="screen-action extra" ${d.has_reserve_questions?'':'disabled'}>${localized(d.has_reserve_questions?'Қосымша сұрақтар':'Қосымша сұрақтар жоқ',d.has_reserve_questions?'Дополнительные вопросы':'Дополнительных вопросов нет')}</button></div></div>`;
   }else if(d.mode==='SLIDE'||d.mode==='PROGRAM_SLIDE'){
     const slide=d.slide||{};const title=d.display_language==='KK'&&slide.title_kk?slide.title_kk:slide.title;const text=d.display_language==='KK'&&slide.text_kk?slide.text_kk:slide.text;
-    if(d.display_language==='BOTH'&&slide.title_kk)html=`<div class="eyebrow">Интеллектуальная игра / Зияткерлік ойын</div><div class="center"><div class="bilingual"><div class="language-block"><div class="lang">Русский</div><div class="event" style="font-size:3.5vw">${esc(slide.title)}</div><div class="description" style="font-size:1.5vw">${esc(slide.text||'')}</div></div><div class="language-block"><div class="lang">Қазақша</div><div class="event" style="font-size:3.5vw">${esc(slide.title_kk)}</div><div class="description" style="font-size:1.5vw">${esc(slide.text_kk||'')}</div></div></div></div>`;
+    if(d.display_language==='BOTH'&&slide.title_kk)html=`<div class="eyebrow">Зияткерлік ойын / Интеллектуальная игра</div><div class="center"><div class="bilingual"><div class="language-block"><div class="lang">Қазақша</div><div class="event" style="font-size:3.5vw">${esc(slide.title_kk)}</div><div class="description" style="font-size:1.5vw">${esc(slide.text_kk||'')}</div></div><div class="language-block"><div class="lang">Русский</div><div class="event" style="font-size:3.5vw">${esc(slide.title)}</div><div class="description" style="font-size:1.5vw">${esc(slide.text||'')}</div></div></div></div>`;
     else html=`<div class="eyebrow">Интеллектуальная игра</div><div class="center"><div class="event" style="font-size:5vw">${esc(title||'Продолжаем игру')}</div><div class="description">${esc(text||'')}</div></div>`;
   }else if(d.mode==='DETECTIVE'){
     const game=d.detective||{};
     const time=d.timer.remaining===null?'--:--':`${String(Math.floor(d.timer.remaining/60)).padStart(2,'0')}:${String(d.timer.remaining%60).padStart(2,'0')}`;
-    const title=d.display_language==='KK'&&game.title_kk?game.title_kk:game.title_ru;
-    const rules=d.display_language==='KK'&&game.rules_kk?game.rules_kk:game.rules_ru;
-    html=`<div class="eyebrow">Детективная игра / Детектив ойыны</div><div class="center"><div class="event" style="font-size:4vw">${esc(title||'Расследование')}</div><div class="description">${esc(rules||'')}</div><div class="timer ${d.timer.remaining<=10?'danger':''}" style="font-size:9vw;margin-top:.25em">${time}</div><div class="description">Ответили: ${game.answered||0} из ${game.total||0} команд</div></div>`;
+    const title=d.display_language==='RU'?game.title_ru:(game.title_kk||game.title_ru);
+    const rules=d.display_language==='RU'?game.rules_ru:(game.rules_kk||game.rules_ru);
+    html=`<div class="eyebrow">${localized('Детектив ойыны','Детективная игра')}</div><div class="center"><div class="event" style="font-size:4vw">${esc(title||localized('Тергеу','Расследование'))}</div><div class="description">${esc(rules||'')}</div><div class="timer ${d.timer.remaining<=10?'danger':''}" style="font-size:9vw;margin-top:.25em">${time}</div><div class="description">${localized(`Жауап берді: ${game.answered||0} / ${game.total||0} команда`,`Ответили: ${game.answered||0} из ${game.total||0} команд`)}</div></div>`;
+  }else if(d.mode==='DETECTIVE_ANSWER'){
+    const game=d.detective||{};
+    html=`<div class="eyebrow">${localized('Дұрыс жауап','Правильный ответ')}</div><div class="center">${centeredLanguages(game.correct_answer||'—',game.correct_answer||'—',game.explanation_kk||'',game.explanation_ru||'')}</div>`;
+  }else if(d.mode==='GAME_COMPLETE'){
+    html=`<div class="eyebrow">${localized('Ойын аяқталды','Игра завершена')}</div><div class="center">${centeredLanguages('Қатысқандарыңызға рақмет!','Спасибо за участие!','Кездескенше! Сіздер керемет ойнадыңыздар.','До новых встреч! Вы отлично сыграли.')}</div>`;
   }else if((d.mode.startsWith('TIMER')||d.mode.startsWith('SUBMISSION'))&&d.timer.remaining!==null){
     const time=`${String(Math.floor(d.timer.remaining/60)).padStart(2,'0')}:${String(d.timer.remaining%60).padStart(2,'0')}`;
     const submission=d.mode.startsWith('SUBMISSION');
-    const label=submission?'Ответ команды / Команданың жауабы':'Обсуждение / Талқылау';
-    const status=d.timer.ready?'Готов к запуску / Бастауға дайын':d.timer.paused?'Пауза / Үзіліс':submission?'Капитаны отправляют ответы / Капитандар жауап жібереді':'';
+    const label=submission?localized('Команданың жауабы','Ответ команды'):localized('Талқылау','Обсуждение');
+    const status=d.timer.ready?localized('Бастауға дайын','Готов к запуску'):d.timer.paused?localized('Үзіліс','Пауза'):submission?localized('Капитандар жауап жібереді','Капитаны отправляют ответы'):'';
     html=`<div class="eyebrow">${label}</div><div class="center"><div class="timer ${d.timer.remaining<=10?'danger':''}">${time}</div>${status?`<div class="description">${status}</div>`:''}</div>`;
   }else if(d.mode==='QUESTION'){
     const options=(q.options||[]).map((item,index)=>`<div class="option">${index+1}. ${esc(item)}</div>`).join('');
-    if(d.display_language==='BOTH'&&ru.text&&kk.text) html=`<div class="center"><div class="bilingual">${block('Русский',ru,'question')}${block('Қазақша',kk,'question')}</div>${options?`<div class="options">${options}</div>`:''}</div>`;
+    if(d.display_language==='BOTH'&&ru.text&&kk.text) html=`<div class="center"><div class="bilingual">${block('Қазақша',kk,'question')}${block('Русский',ru,'question')}</div>${options?`<div class="options">${options}</div>`:''}</div>`;
     else{const data=d.display_language==='KK'&&kk.text?kk:ru;html=`<div class="question-title">${esc(data.title||'Вопрос')}</div><div class="center"><div class="question">${esc(data.text||'Ожидаем вопрос')}</div>${options?`<div class="options">${options}</div>`:''}</div>`}
   }else if(d.mode==='ANSWER'){
-    if(d.display_language==='BOTH'&&ru.answer&&kk.answer) html=`<div class="answer-label">Ответ / Жауап</div><div class="center"><div class="bilingual">${block('Русский',ru,'answer')}${block('Қазақша',kk,'answer')}</div></div>`;
+    if(d.display_language==='BOTH'&&ru.answer&&kk.answer) html=`<div class="answer-label">Жауап / Ответ</div><div class="center"><div class="bilingual">${block('Қазақша',kk,'answer')}${block('Русский',ru,'answer')}</div></div>`;
     else{const data=d.display_language==='KK'&&kk.answer?kk:ru;html=`<div class="answer-label">${d.display_language==='KK'?'Дұрыс жауап':'Правильный ответ'}</div><div class="center"><div class="answer">${esc(data.answer||'')}</div><div class="explanation">${esc(data.explanation||'')}</div></div>`}
   }else if(d.mode==='TEAM_ANSWERS'){
     const cards=(d.anonymous_answers||[]).map(a=>`<div class="answer-card">${esc(a.text)}${a.explanation?`<small>${esc(a.explanation)}</small>`:''}</div>`).join('');
-    html=`<div class="answer-label">Версии команд / Командалардың нұсқалары</div><div class="center">${cards?`<div class="answer-wall">${cards}</div>`:'<div class="description">Команды не успели отправить ответы</div>'}</div>`;
+    html=`<div class="answer-label">${localized('Командалардың нұсқалары','Версии команд')}</div><div class="center">${cards?`<div class="answer-wall">${cards}</div>`:`<div class="description">${localized('Командалар жауаптарын жіберіп үлгермеді','Команды не успели отправить ответы')}</div>`}</div>`;
   }else{
     html=`<div class="center"><div class="event">${esc(d.event)}</div></div>`;
   }
   if(q.stage?.key==='test'&&['QUESTION','TIMER_READY','TIMER','TIMER_PAUSED','SUBMISSION_READY','SUBMISSION','SUBMISSION_PAUSED','ANSWER','TEAM_ANSWERS'].includes(d.mode)){
-    html='<div class="practice-badge">Тестовый вопрос · Сынақ сұрағы · 0 баллов</div>'+html;
+    html=`<div class="practice-badge">${localized('Сынақ сұрағы · 0 ұпай','Тестовый вопрос · 0 баллов')}</div>`+html;
   }
   app.innerHTML=html;
   document.getElementById('electionStartMain')?.addEventListener('click',event=>{event.stopPropagation();timerCommand('start')});
+  document.getElementById('finishGameChoice')?.addEventListener('click',event=>{event.stopPropagation();completeGameChoice()});
+  document.getElementById('extraQuestionsChoice')?.addEventListener('click',event=>{event.stopPropagation();advanceSlide()});
   const captainTimer=d.mode==='CAPTAIN_ELECTION_READY'||d.mode==='CAPTAIN_ELECTION_RUNNING';
   timerTools.classList.toggle('visible',d.mode.startsWith('TIMER')||d.mode.startsWith('SUBMISSION')||d.mode==='DETECTIVE'||captainTimer);
-  timerPlay.hidden=captainTimer||!(d.timer.ready||d.timer.paused);
+  timerPlay.hidden=captainTimer||!(d.timer.ready||d.timer.paused||(d.mode==='DETECTIVE'&&!d.timer.running));
   timerPause.hidden=!d.timer.running||captainTimer;
   timerReset.hidden=!(d.mode.startsWith('TIMER')||d.mode.startsWith('SUBMISSION'));
+}
+
+async function completeGameChoice(){
+  if(busy||!confirm('Завершить игру и показать экран благодарности?'))return;
+  busy=true;
+  try{const response=await fetch('/api/screen/{{ token }}/complete-game',{method:'POST'});if(!response.ok){const error=await response.json();throw new Error(error.detail||'Не удалось завершить игру')}await sync()}
+  catch(error){alert(error.message)}finally{busy=false}
 }
 
 function ensureAudio(){if(!audioContext)audioContext=new (window.AudioContext||window.webkitAudioContext)();if(audioContext.state==='suspended')audioContext.resume()}

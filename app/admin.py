@@ -19,9 +19,9 @@ from .database import get_db
 from .detective import generate_cases_for_stage
 from .detective_runtime import prepared_cases, send_detective_clue, start_detective_stage
 from .models import (
-    Answer, AnswerScope, AuditLog, CaptainElection, CaptainVote, DetectiveCase, DetectiveClue, DetectiveSubmission,
-    DetectiveStatus, Event, EventSlide, GameProgram, GameProgramStage, PendingRegistration, Player, PlayerRole, Question, QuestionStatus,
-    QuestionType, ScoreAdjustment, Stage, StageType, Team, TeamQuestionPrompt,
+    Answer, AnswerScope, AuditLog, CaptainElection, CaptainVote, CommunicationVote, DetectiveCase, DetectiveClue, DetectiveSubmission,
+    DetectiveStatus, Event, EventFeedback, EventSlide, GameProgram, GameProgramStage, PendingRegistration, Player, PlayerRole, Question, QuestionStatus,
+    QuestionType, ResponseArchive, ScoreAdjustment, Stage, StageType, Team, TeamQuestionPrompt,
 )
 from .services import adjust_score, audit, grade_all_answers, grade_answer, leaderboard, set_question_status, submit_detective_answer
 from .runtime_state import (
@@ -32,10 +32,48 @@ from .public_url import public_base_url
 from .seed_game_content import seed_game_content_for_event
 from .fixed_program import ensure_fixed_program
 from .captain_elections import ELECTION_DURATION_SECONDS, start_captain_election_for_team
+from .surveys import (
+    COMMUNICATION_QUESTION_KK, COMMUNICATION_QUESTION_RU,
+    FEEDBACK_QUESTION_KK, FEEDBACK_QUESTION_RU,
+    communication_markup, feedback_markup,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 security = HTTPBasic()
+
+
+async def send_survey_messages(event: Event, kind: str, db: Session) -> tuple[int, int]:
+    token = get_settings().telegram_bot_token
+    if not token:
+        raise HTTPException(409, "Telegram-бот не настроен")
+    players = db.scalars(
+        select(Player).join(Team).where(
+            Team.event_id == event.id, Team.active.is_(True),
+            Player.active.is_(True), Player.telegram_user_id.is_not(None),
+        ).order_by(Player.id)
+    ).all()
+    bot = Bot(token)
+    delivered = failed = 0
+    try:
+        for player in players:
+            try:
+                if kind == "communication":
+                    teammates = [candidate for candidate in player.team.players if candidate.active]
+                    if len(teammates) < 2:
+                        continue
+                    text = COMMUNICATION_QUESTION_KK if player.preferred_language == "KK" else COMMUNICATION_QUESTION_RU
+                    markup = communication_markup(event.id, player, teammates)
+                else:
+                    text = FEEDBACK_QUESTION_KK if player.preferred_language == "KK" else FEEDBACK_QUESTION_RU
+                    markup = feedback_markup(event.id)
+                await bot.send_message(player.telegram_user_id, text, reply_markup=markup)
+                delivered += 1
+            except Exception:
+                failed += 1
+    finally:
+        await bot.session.close()
+    return delivered, failed
 
 
 def telegram_html(text: str) -> str:
@@ -77,7 +115,7 @@ def require_roster_unlocked(db: Session, event_id: int) -> None:
         db.rollback()
         raise HTTPException(
             409,
-            "Составы заблокированы на время игры. Используйте временного отправителя на пульте проведения.",
+            "Составы заблокированы, пока игра идёт. Откройте раздел «Проведение», нажмите «Техническая пауза», затем повторите действие.",
         )
 
 
@@ -189,6 +227,110 @@ def delete_player_dependencies(db: Session, player: Player) -> None:
         (Answer.player_id == player.id) | (Answer.respondent_player_id == player.id)
     ))
     db.execute(delete(ScoreAdjustment).where(ScoreAdjustment.player_id == player.id))
+    db.execute(delete(CommunicationVote).where(
+        (CommunicationVote.voter_player_id == player.id) |
+        (CommunicationVote.candidate_player_id == player.id)
+    ))
+    db.execute(delete(EventFeedback).where(EventFeedback.player_id == player.id))
+
+
+def archive_program_responses(
+    db: Session, event: Event, program: GameProgram,
+    stage_ids: list[int], question_ids: list[int],
+) -> int:
+    archived = 0
+    for answer in db.scalars(select(Answer).where(Answer.question_id.in_(question_ids or [-1]))).all():
+        db.add(ResponseArchive(
+            event_id=event.id, program_id=program.id, run_started_at=program.started_at,
+            kind="QUESTION", stage_title=answer.question.stage.title,
+            question_title=answer.question.title,
+            team_name=answer.team.name if answer.team else "",
+            respondent_name=answer.respondent.full_name if answer.respondent else "",
+            answer_text=answer.text, explanation=answer.explanation,
+            is_correct=answer.is_correct, points_awarded=answer.points_awarded,
+            submitted_at=answer.submitted_at,
+        ))
+        archived += 1
+    for submission in db.scalars(select(DetectiveSubmission).where(
+        DetectiveSubmission.stage_id.in_(stage_ids or [-1])
+    )).all():
+        db.add(ResponseArchive(
+            event_id=event.id, program_id=program.id, run_started_at=program.started_at,
+            kind="DETECTIVE", stage_title=submission.case.stage.title,
+            question_title=submission.case.title_ru,
+            team_name=submission.team.name,
+            respondent_name=submission.captain.full_name,
+            answer_text=submission.selected_option,
+            explanation="", is_correct=submission.is_correct,
+            points_awarded=submission.points_awarded,
+            submitted_at=submission.submitted_at,
+        ))
+        archived += 1
+    db.flush()
+    return archived
+
+
+def clear_event_data(db: Session, event: Event) -> None:
+    team_ids = list(db.scalars(select(Team.id).where(Team.event_id == event.id)).all())
+    player_ids = list(db.scalars(select(Player.id).where(Player.team_id.in_(team_ids or [-1]))).all())
+    stage_ids = list(db.scalars(select(Stage.id).where(Stage.event_id == event.id)).all())
+    question_ids = list(db.scalars(select(Question.id).where(Question.stage_id.in_(stage_ids or [-1]))).all())
+    program_ids = list(db.scalars(select(GameProgram.id).where(GameProgram.event_id == event.id)).all())
+    case_ids = list(db.scalars(select(DetectiveCase.id).where(DetectiveCase.stage_id.in_(stage_ids or [-1]))).all())
+    election_ids = list(db.scalars(select(CaptainElection.id).where(CaptainElection.team_id.in_(team_ids or [-1]))).all())
+    db.execute(delete(CaptainVote).where(CaptainVote.election_id.in_(election_ids or [-1])))
+    db.execute(delete(CaptainElection).where(CaptainElection.id.in_(election_ids or [-1])))
+    db.execute(delete(DetectiveSubmission).where(DetectiveSubmission.stage_id.in_(stage_ids or [-1])))
+    db.execute(delete(DetectiveClue).where(DetectiveClue.case_id.in_(case_ids or [-1])))
+    db.execute(delete(DetectiveCase).where(DetectiveCase.id.in_(case_ids or [-1])))
+    db.execute(delete(TeamQuestionPrompt).where(TeamQuestionPrompt.question_id.in_(question_ids or [-1])))
+    db.execute(delete(Answer).where(Answer.question_id.in_(question_ids or [-1])))
+    db.execute(delete(CommunicationVote).where(CommunicationVote.event_id == event.id))
+    db.execute(delete(EventFeedback).where(EventFeedback.event_id == event.id))
+    db.execute(delete(ScoreAdjustment).where(ScoreAdjustment.event_id == event.id))
+    db.execute(delete(ResponseArchive).where(ResponseArchive.event_id == event.id))
+    db.execute(delete(GameProgramStage).where(GameProgramStage.program_id.in_(program_ids or [-1])))
+    db.execute(delete(Question).where(Question.id.in_(question_ids or [-1])))
+    db.execute(delete(GameProgram).where(GameProgram.id.in_(program_ids or [-1])))
+    db.execute(delete(Stage).where(Stage.id.in_(stage_ids or [-1])))
+    db.execute(delete(EventSlide).where(EventSlide.event_id == event.id))
+    db.execute(delete(Player).where(Player.id.in_(player_ids or [-1])))
+    db.execute(delete(Team).where(Team.id.in_(team_ids or [-1])))
+    db.execute(delete(PendingRegistration).where(PendingRegistration.event_id == event.id))
+    db.execute(delete(AuditLog).where(AuditLog.event_id == event.id))
+    event.display_mode = "WELCOME"
+    event.current_question_id = None
+    event.current_detective_stage_id = None
+    event.current_slide_id = None
+    event.timer_started_at = None
+    event.timer_duration_seconds = event.default_question_duration
+    event.screen_history_json = "[]"
+    event.screen_future_json = "[]"
+    event.pause_snapshot_json = ""
+    # True is intentional: a full reset must remain empty until the operator
+    # imports a package or creates content manually. False means "new event"
+    # and would make the dashboard restore the built-in program immediately.
+    event.slides_initialized = True
+    CUSTOM_SLIDES.pop(event.id, None)
+    for store in (TEAM_DELIVERY, CLUE_DELIVERY, TEMPORARY_SENDERS):
+        store.clear()
+
+
+def apply_three_minute_timings(db: Session, event: Event) -> None:
+    """One-time upgrade of existing content to 3 minutes + 1 minute."""
+    event.default_question_duration = 180
+    if event.timer_started_at is None:
+        event.timer_duration_seconds = 180
+    stages = db.scalars(select(Stage).where(Stage.event_id == event.id)).all()
+    stage_ids = [stage.id for stage in stages]
+    for stage in stages:
+        if stage.stage_type == StageType.QUIZ:
+            stage.default_duration_seconds = 180
+            stage.default_submission_seconds = 60
+    for question in db.scalars(select(Question).where(Question.stage_id.in_(stage_ids or [-1]))).all():
+        question.duration_seconds = 180
+        question.submission_seconds = 60
+    event.timings_v2_applied = True
 
 
 @router.get("", response_class=HTMLResponse)
@@ -229,8 +371,17 @@ def event_dashboard(
     db: Session = Depends(get_db), actor: str = Depends(admin_auth),
 ):
     event = require_event(db, event_id)
-    ensure_fixed_program(db, event)
-    db.commit()
+    if not event.kazakh_primary_applied:
+        event.display_language = "KK"
+        event.kazakh_primary_applied = True
+        db.commit()
+    if not event.timings_v2_applied:
+        apply_three_minute_timings(db, event)
+        db.commit()
+    has_content = db.scalar(select(Stage.id).where(Stage.event_id == event.id).limit(1)) is not None
+    if not event.slides_initialized and not has_content:
+        ensure_fixed_program(db, event)
+        db.commit()
     teams = db.scalars(select(Team).where(Team.event_id == event.id).order_by(Team.name)).all()
     players = db.scalars(select(Player).join(Team).where(Team.event_id == event.id).order_by(Team.name, Player.full_name)).all()
     pending_registrations = db.scalars(
@@ -260,6 +411,22 @@ def event_dashboard(
         select(Answer).join(Question).join(Stage).where(Stage.event_id == event.id)
         .order_by(Stage.position, Question.position, Answer.submitted_at)
     ).all()
+    communication_results = db.execute(
+        select(Player.full_name, Team.name, func.count(CommunicationVote.id))
+        .join(CommunicationVote, CommunicationVote.candidate_player_id == Player.id)
+        .join(Team, Team.id == CommunicationVote.team_id)
+        .where(CommunicationVote.event_id == event.id)
+        .group_by(Player.id, Player.full_name, Team.id, Team.name)
+        .order_by(func.count(CommunicationVote.id).desc(), Player.full_name)
+    ).all()
+    event_feedback = db.scalars(
+        select(EventFeedback).options(selectinload(EventFeedback.player))
+        .where(EventFeedback.event_id == event.id).order_by(EventFeedback.created_at)
+    ).all()
+    response_archive = db.scalars(
+        select(ResponseArchive).where(ResponseArchive.event_id == event.id)
+        .order_by(ResponseArchive.archived_at.desc(), ResponseArchive.submitted_at)
+    ).all()
     answer_counts = dict(db.execute(
         select(Answer.question_id, func.count(Answer.id)).join(Question).join(Stage)
         .where(Stage.event_id == event.id).group_by(Answer.question_id)
@@ -277,6 +444,8 @@ def event_dashboard(
         "roster_paused": active_program is not None and active_program.status == "PAUSED",
         "notice": request.query_params.get("notice", ""),
         "answers": answers, "answer_counts": answer_counts, "logs": logs, "active_question": active_question,
+        "communication_results": communication_results, "event_feedback": event_feedback,
+        "response_archive": response_archive,
         "board": leaderboard(db, event.id), "roles": PlayerRole,
         "stage_types": StageType, "detective_statuses": DetectiveStatus,
         "question_types": QuestionType,
@@ -338,11 +507,19 @@ def live_control_state(
     elapsed = (datetime.utcnow() - event.timer_started_at).total_seconds() if event.timer_started_at else None
     remaining = max(0, event.timer_duration_seconds - int(elapsed)) if elapsed is not None else (
         event.timer_duration_seconds
-        if event.display_mode in {"TIMER_READY", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION_PAUSED", "CAPTAIN_ELECTION_READY"}
+        if event.display_mode in {"TIMER_READY", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION_PAUSED", "CAPTAIN_ELECTION_READY", "DETECTIVE"}
         else None
     )
     question = db.get(Question, event.current_question_id) if event.current_question_id else None
     current_slide = db.get(EventSlide, event.current_slide_id) if event.current_slide_id else None
+    current_slide_payload = (
+        {
+            "title": current_slide.title, "text": current_slide.text,
+            "title_kk": current_slide.title_kk, "text_kk": current_slide.text_kk,
+            "position": current_slide.position,
+        }
+        if current_slide else dict(CUSTOM_SLIDES.get(event.id) or {}) or None
+    )
     team_answers = {}
     if question:
         team_answers = {
@@ -446,17 +623,41 @@ def live_control_state(
         "ANSWER": "Показать ответы команд" if question and question.show_anonymous_answers else "Перейти дальше",
         "TEAM_ANSWERS": "Следующий вопрос или этап",
         "DETECTIVE": "Завершить детектив и перейти дальше",
+        "DETECTIVE_ANSWER": "Объявить завершение третьего этапа",
         "RESERVE_READY": "Запустить резервный раунд",
+        "GAME_COMPLETE": "Игра завершена",
         "WELCOME": "Показать первый вопрос",
         "SLIDE": "Вернуться к игре",
     }
     detective_answered = len(detective_submissions)
     detective_total = len(teams)
-    detective_can_finish = not detective_stage or remaining == 0 or detective_answered >= detective_total
+    detective_can_finish = (
+        event.display_mode != "DETECTIVE" or not detective_stage
+        or remaining == 0 or detective_answered >= detective_total
+    )
     timer_blocks_advance = (
-        event.display_mode in {"TIMER_READY", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION_PAUSED"}
+        event.display_mode in {
+            "TIMER_READY", "TIMER", "TIMER_PAUSED",
+            "SUBMISSION_READY", "SUBMISSION", "SUBMISSION_PAUSED",
+        }
         and (remaining is None or remaining > 0)
     )
+    if event.display_mode == "PAUSED":
+        advance_block_reason = "Игра на технической паузе. Сначала нажмите «Продолжить игру»."
+    elif timer_blocks_advance:
+        advance_block_reason = (
+            "Дождитесь окончания таймера или завершите его кнопкой уменьшения времени."
+            if event.timer_started_at else
+            "Сначала запустите таймер."
+        )
+    elif event.display_mode == "DETECTIVE" and detective_stage and not detective_can_finish:
+        advance_block_reason = "Детектив ещё идёт: дождитесь ответов команд или завершите его досрочно."
+    elif event.display_mode in {"CAPTAIN_ELECTION_READY", "CAPTAIN_ELECTION_RUNNING"} and any(not team["captain"] for team in teams):
+        advance_block_reason = "Сначала завершите выбор капитанов всех команд."
+    elif not program and not question:
+        advance_block_reason = "Сначала запустите программу в разделе «Программа»."
+    else:
+        advance_block_reason = ""
     heartbeat = SCREEN_HEARTBEATS.get(event.id)
     heartbeat_age = int((datetime.utcnow() - heartbeat).total_seconds()) if heartbeat else None
     return {
@@ -477,6 +678,7 @@ def live_control_state(
             "SUBMISSION_READY": "Таймер ответа готов", "SUBMISSION": "Приём ответов", "SUBMISSION_PAUSED": "Приём ответов на паузе",
             "ANSWER": "Правильный ответ",
             "TEAM_ANSWERS": "Ответы команд", "DETECTIVE": "Детективная игра",
+            "DETECTIVE_ANSWER": "Правильный ответ детектива", "GAME_COMPLETE": "Игра завершена",
             "RESERVE_READY": "Решение о резервном раунде",
             "PAUSED": "Пауза",
             "SLIDE": "Служебный слайд",
@@ -485,10 +687,7 @@ def live_control_state(
             "id": question.id, "title": question.title, "text": question.text,
             "answer": question.correct_answer, "stage": question.stage.title,
         },
-        "slide": None if not current_slide else {
-            "title": current_slide.title, "text": current_slide.text,
-            "title_kk": current_slide.title_kk, "text_kk": current_slide.text_kk,
-        },
+        "slide": current_slide_payload,
         "detective": None if not detective_stage else {
             "id": detective_stage.id, "title": detective_stage.title,
             "answered": detective_answered, "total": detective_total,
@@ -498,12 +697,19 @@ def live_control_state(
             "remaining": remaining,
             "running": event.timer_started_at is not None and remaining is not None and remaining > 0,
             "ready": event.display_mode in {"TIMER_READY", "SUBMISSION_READY", "CAPTAIN_ELECTION_READY"},
-            "paused": event.display_mode in {"TIMER_PAUSED", "SUBMISSION_PAUSED"},
+            "paused": event.display_mode in {"TIMER_PAUSED", "SUBMISSION_PAUSED"} or (
+                event.display_mode == "DETECTIVE" and event.timer_started_at is None
+            ),
         },
         "timeline": timeline,
         "current_index": current_index,
         "teams": teams,
         "next_label": next_labels.get(event.display_mode, "Продолжить"),
+        "advance_block_reason": advance_block_reason,
+        "current_position": (
+            f"Элемент {current_index + 1} из {len(timeline)}"
+            if current_index >= 0 else "Вводный или служебный слайд"
+        ),
         "can_advance": event.display_mode != "PAUSED" and bool(program or question) and detective_can_finish and not timer_blocks_advance and not (
             event.display_mode in {"CAPTAIN_ELECTION_READY", "CAPTAIN_ELECTION_RUNNING"}
             and any(not team["captain"] for team in teams)
@@ -523,7 +729,11 @@ def add_live_time(
     actor: str = Depends(admin_auth),
 ):
     event = require_event(db, event_id)
-    if not event.timer_started_at and event.display_mode != "CAPTAIN_ELECTION_READY":
+    adjustable_paused_modes = {
+        "CAPTAIN_ELECTION_READY", "TIMER_READY", "TIMER_PAUSED",
+        "SUBMISSION_READY", "SUBMISSION_PAUSED", "DETECTIVE",
+    }
+    if not event.timer_started_at and event.display_mode not in adjustable_paused_modes:
         raise HTTPException(409, "Сейчас таймер не запущен")
     seconds = max(-300, min(seconds, 1800))
     event.timer_duration_seconds = max(0, event.timer_duration_seconds + seconds)
@@ -536,6 +746,28 @@ def add_live_time(
     audit(db, actor, "live.timer_adjust", event, f"seconds={seconds}")
     db.commit()
     return {"ok": True}
+
+
+@router.post("/events/{event_id}/surveys/communication/send")
+async def send_communication_survey(
+    event_id: int, db: Session = Depends(get_db), actor: str = Depends(admin_auth),
+):
+    event = require_event(db, event_id)
+    delivered, failed = await send_survey_messages(event, "communication", db)
+    audit(db, actor, "survey.communication.send", event, f"delivered={delivered}; failed={failed}")
+    db.commit()
+    return {"ok": True, "delivered": delivered, "failed": failed}
+
+
+@router.post("/events/{event_id}/surveys/feedback/send")
+async def send_feedback_survey(
+    event_id: int, db: Session = Depends(get_db), actor: str = Depends(admin_auth),
+):
+    event = require_event(db, event_id)
+    delivered, failed = await send_survey_messages(event, "feedback", db)
+    audit(db, actor, "survey.feedback.send", event, f"delivered={delivered}; failed={failed}")
+    db.commit()
+    return {"ok": True, "delivered": delivered, "failed": failed}
 
 
 @router.post("/events/{event_id}/live/slide")
@@ -860,8 +1092,6 @@ def pause_live_program(
     ).order_by(GameProgram.started_at.desc()))
     if not program:
         raise HTTPException(409, "Сейчас нет запущенной игры")
-    if event.display_mode == "DETECTIVE":
-        raise HTTPException(409, "Во время детективной гонки техническая пауза недоступна: время влияет на места команд")
     snapshot = screen_snapshot(event)
     event.pause_snapshot_json = json.dumps(snapshot, ensure_ascii=False)
     event.display_mode = "PAUSED"
@@ -956,10 +1186,9 @@ def finish_live_detective(
         raise HTTPException(409, "Сейчас детективный этап не проводится")
     stage.detective_status = DetectiveStatus.FINISHED
     event.timer_started_at = None
-    # Keep the stage id until the next transition so STAGE_COMPLETE can locate
-    # the current item and either continue the full game or finish a standalone run.
+    # Show the solution before announcing completion of stage three.
     event.current_detective_stage_id = stage.id
-    event.display_mode = "STAGE_COMPLETE"
+    event.display_mode = "DETECTIVE_ANSWER"
     audit(db, actor, "detective.force_finish", stage)
     db.commit()
     return {"ok": True, "stage_id": stage.id}
@@ -986,6 +1215,7 @@ def restart_live_program(
     question_ids = list(db.scalars(select(Question.id).where(
         Question.stage_id.in_(stage_ids or [-1])
     )).all())
+    archived = archive_program_responses(db, event, program, stage_ids, question_ids)
     db.execute(delete(TeamQuestionPrompt).where(TeamQuestionPrompt.question_id.in_(question_ids or [-1])))
     db.execute(delete(Answer).where(Answer.question_id.in_(question_ids or [-1])))
     db.execute(delete(DetectiveSubmission).where(DetectiveSubmission.stage_id.in_(stage_ids or [-1])))
@@ -1007,7 +1237,6 @@ def restart_live_program(
     CUSTOM_SLIDES.pop(event.id, None)
 
     program.status = "RUNNING"
-    program.started_at = datetime.utcnow()
     program.finished_at = None
     event.display_mode = "INTRO"
     event.current_question_id = None
@@ -1017,9 +1246,32 @@ def restart_live_program(
     event.timer_started_at = None
     event.timer_duration_seconds = ELECTION_DURATION_SECONDS
     clear_persistent_navigation(event)
-    audit(db, actor, "live.restart", event, f"program={program.id}; questions={len(question_ids)}")
+    audit(db, actor, "live.restart", event, f"program={program.id}; questions={len(question_ids)}; archived={archived}")
     db.commit()
     return {"ok": True, "status": "RUNNING"}
+
+
+@router.post("/events/{event_id}/programs/{program_id}/restart")
+def restart_program_from_editor(
+    event_id: int, program_id: int,
+    db: Session = Depends(get_db), actor: str = Depends(admin_auth),
+):
+    program = db.get(GameProgram, program_id)
+    if not program or program.event_id != event_id:
+        raise HTTPException(404, "Программа не найдена")
+    for other in db.scalars(select(GameProgram).where(
+        GameProgram.event_id == event_id,
+        GameProgram.status.in_(["RUNNING", "PAUSED"]),
+        GameProgram.id != program.id,
+    )).all():
+        other.status = "FINISHED"
+        other.finished_at = datetime.utcnow()
+    program.status = "RUNNING"
+    program.started_at = datetime.utcnow()
+    program.finished_at = None
+    db.flush()
+    restart_live_program(event_id, db, actor)
+    return go(event_id, "live", "Игра перезапущена. Предыдущие ответы сохранены в архиве.")
 
 
 @router.post("/events/{event_id}/teams")
@@ -1120,6 +1372,12 @@ def delete_team(
         (ScoreAdjustment.team_id == team.id) |
         (ScoreAdjustment.player_id.in_(player_ids or [-1]))
     ))
+    db.execute(delete(CommunicationVote).where(
+        (CommunicationVote.team_id == team.id) |
+        (CommunicationVote.voter_player_id.in_(player_ids or [-1])) |
+        (CommunicationVote.candidate_player_id.in_(player_ids or [-1]))
+    ))
+    db.execute(delete(EventFeedback).where(EventFeedback.player_id.in_(player_ids or [-1])))
     db.execute(delete(CaptainElection).where(CaptainElection.team_id == team.id))
     db.execute(delete(Player).where(Player.team_id == team.id))
     name = team.name
@@ -1422,7 +1680,7 @@ def create_stage(
         detective_duration_seconds=max(60, min(detective_duration_seconds, 7200)),
         detective_points=detective_points,
         default_duration_seconds=max(5, min(default_duration_seconds or event.default_question_duration, 3600)),
-        default_submission_seconds=max(5, min(default_submission_seconds or 20, 300)),
+        default_submission_seconds=max(5, min(default_submission_seconds or 60, 300)),
         default_team_points=max(0, min(default_team_points if default_team_points is not None else event.default_team_points, 10000)),
     )
     db.add(stage); db.flush()
@@ -1633,6 +1891,10 @@ def delete_program(
     if program.status in {"RUNNING", "PAUSED"}:
         raise HTTPException(409, "Сначала завершите запущенную игру")
     title = program.title
+    for archived in db.scalars(select(ResponseArchive).where(
+        ResponseArchive.program_id == program.id
+    )).all():
+        archived.program_id = None
     db.delete(program)
     audit(db, actor, "program.delete", require_event(db, event_id), title)
     db.commit()
@@ -1942,6 +2204,175 @@ def export_content(event_id: int, db: Session = Depends(get_db), actor=Depends(a
     )
 
 
+@router.get("/events/{event_id}/package/export")
+def export_event_package(event_id: int, db: Session = Depends(get_db), actor=Depends(admin_auth)):
+    """Export all reusable event configuration, without participants or results."""
+    event = require_event(db, event_id)
+    stages = db.scalars(
+        select(Stage).options(selectinload(Stage.questions))
+        .where(Stage.event_id == event_id).order_by(Stage.position)
+    ).all()
+    programs = db.scalars(
+        select(GameProgram).options(selectinload(GameProgram.stage_links))
+        .where(GameProgram.event_id == event_id).order_by(GameProgram.created_at)
+    ).all()
+    slides = db.scalars(
+        select(EventSlide).where(EventSlide.event_id == event_id).order_by(EventSlide.position)
+    ).all()
+    refs = {stage.id: (stage.system_key or f"stage-{index}") for index, stage in enumerate(stages, 1)}
+    payload = {
+        "format": "assyl-100-event-package",
+        "version": 1,
+        "event": {
+            "name": event.name,
+            "description": event.description,
+            "default_question_duration": event.default_question_duration,
+            "default_personal_points": event.default_personal_points,
+            "default_team_points": event.default_team_points,
+            "timer_sound_enabled": event.timer_sound_enabled,
+            "display_language": event.display_language,
+        },
+        "slides": [{
+            "position": slide.position, "title_ru": slide.title, "text_ru": slide.text,
+            "title_kk": slide.title_kk, "text_kk": slide.text_kk,
+        } for slide in slides],
+        "stages": [{
+            "ref": refs[stage.id], "system_key": stage.system_key, "position": stage.position,
+            "stage_type": stage.stage_type.value, "title_ru": stage.title, "title_kk": stage.title_kk,
+            "description_ru": stage.description, "description_kk": stage.description_kk,
+            "default_duration_seconds": stage.default_duration_seconds,
+            "default_submission_seconds": stage.default_submission_seconds,
+            "default_team_points": stage.default_team_points,
+            "detective_duration_seconds": stage.detective_duration_seconds,
+            "detective_points": stage.detective_points,
+            "questions": [{
+                "position": q.position, "title_ru": q.title, "title_kk": q.title_kk,
+                "text_ru": q.text, "text_kk": q.text_kk,
+                "correct_answer_ru": q.correct_answer, "correct_answer_kk": q.correct_answer_kk,
+                "explanation_ru": q.explanation, "explanation_kk": q.explanation_kk,
+                "duration_seconds": q.duration_seconds, "submission_seconds": q.submission_seconds,
+                "question_type": q.question_type.value, "options": json.loads(q.options_json or "[]"),
+                "show_anonymous_answers": q.show_anonymous_answers,
+                "personal_points": q.personal_points, "team_points": q.team_points,
+                "personal_answers_enabled": q.personal_answers_enabled,
+                "team_answers_enabled": q.team_answers_enabled,
+            } for q in stage.questions],
+        } for stage in stages],
+        "programs": [{
+            "title": program.title, "description": program.description,
+            "stages": [refs[link.stage_id] for link in sorted(program.stage_links, key=lambda link: link.position)],
+        } for program in programs],
+    }
+    audit(db, actor, "package.export", event, f"stages={len(stages)}; programs={len(programs)}")
+    db.commit()
+    return Response(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        media_type="application/json; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="event-{event_id}-package.json"'},
+    )
+
+
+@router.post("/events/{event_id}/package/import")
+async def import_event_package(
+    event_id: int, package_file: UploadFile = File(...),
+    db: Session = Depends(get_db), actor=Depends(admin_auth),
+):
+    event = require_event(db, event_id)
+    if db.scalar(select(Stage.id).where(Stage.event_id == event_id).limit(1)) is not None:
+        raise HTTPException(409, "Сначала выполните полный сброс мероприятия: импорт пакета разрешён только в пустую программу")
+    raw = await package_file.read()
+    if len(raw) > 5_000_000:
+        raise HTTPException(413, "Файл больше 5 МБ")
+    try:
+        payload = json.loads(raw.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise HTTPException(400, "Не удалось прочитать JSON-файл")
+    if payload.get("format") != "assyl-100-event-package" or payload.get("version") != 1:
+        raise HTTPException(400, "Это не поддерживаемый пакет мероприятия")
+    stages_data, slides_data, programs_data = payload.get("stages"), payload.get("slides", []), payload.get("programs")
+    if not isinstance(stages_data, list) or not isinstance(slides_data, list) or not isinstance(programs_data, list):
+        raise HTTPException(400, "В пакете повреждены списки этапов, слайдов или программ")
+    if len(stages_data) > 100 or len(slides_data) > 200 or len(programs_data) > 20:
+        raise HTTPException(400, "В пакете слишком много объектов")
+    event_data = payload.get("event", {}) if isinstance(payload.get("event", {}), dict) else {}
+    event.name = str(event_data.get("name", event.name)).strip() or event.name
+    event.description = str(event_data.get("description", event.description))
+    event.default_question_duration = 180
+    event.default_personal_points = max(0, min(float(event_data.get("default_personal_points", 1)), 10000))
+    event.default_team_points = max(0, min(float(event_data.get("default_team_points", 5)), 10000))
+    event.timer_sound_enabled = bool(event_data.get("timer_sound_enabled", True))
+    event.display_language = "KK"
+    stage_by_ref: dict[str, Stage] = {}
+    for index, item in enumerate(stages_data, 1):
+        if not isinstance(item, dict):
+            raise HTTPException(400, "Некорректный этап в пакете")
+        ref = str(item.get("ref", f"stage-{index}"))
+        if not ref or ref in stage_by_ref:
+            raise HTTPException(400, "Ссылки этапов должны быть непустыми и уникальными")
+        try:
+            stage_type = StageType(str(item.get("stage_type", "QUIZ")))
+        except ValueError:
+            raise HTTPException(400, f"Неизвестный тип этапа: {item.get('stage_type')}")
+        stage = Stage(
+            event_id=event_id, system_key=item.get("system_key") or None,
+            position=index, stage_type=stage_type,
+            title=str(item.get("title_ru") or item.get("title_kk") or f"Этап {index}"),
+            title_kk=str(item.get("title_kk", "")), description=str(item.get("description_ru", "")),
+            description_kk=str(item.get("description_kk", "")),
+            default_duration_seconds=180,
+            default_submission_seconds=60,
+            default_team_points=max(0, min(float(item.get("default_team_points", 5)), 10000)),
+            detective_duration_seconds=max(30, min(int(item.get("detective_duration_seconds", 1200)), 7200)),
+            detective_points=str(item.get("detective_points", "30,25,20,17,14,10")),
+        )
+        db.add(stage); db.flush(); stage_by_ref[ref] = stage
+        questions = item.get("questions", [])
+        if not isinstance(questions, list) or len(questions) > 500:
+            raise HTTPException(400, "Некорректный список вопросов")
+        for q_index, q in enumerate(questions, 1):
+            if not isinstance(q, dict):
+                raise HTTPException(400, "Некорректный вопрос в пакете")
+            try:
+                q_type = QuestionType(str(q.get("question_type", "TEXT")))
+            except ValueError:
+                raise HTTPException(400, f"Неизвестный тип вопроса: {q.get('question_type')}")
+            db.add(Question(
+                stage_id=stage.id, position=q_index, title=str(q.get("title_ru") or q.get("title_kk") or f"Вопрос {q_index}"),
+                title_kk=str(q.get("title_kk", "")), text=str(q.get("text_ru") or q.get("text_kk") or ""),
+                text_kk=str(q.get("text_kk", "")), correct_answer=str(q.get("correct_answer_ru") or q.get("correct_answer_kk") or ""),
+                correct_answer_kk=str(q.get("correct_answer_kk", "")), explanation=str(q.get("explanation_ru", "")),
+                explanation_kk=str(q.get("explanation_kk", "")),
+                duration_seconds=180,
+                submission_seconds=60,
+                question_type=q_type, options_json=json.dumps(q.get("options", []), ensure_ascii=False),
+                show_anonymous_answers=bool(q.get("show_anonymous_answers", True)),
+                personal_points=max(0, min(float(q.get("personal_points", 1)), 10000)),
+                team_points=max(0, min(float(q.get("team_points", 5)), 10000)),
+                personal_answers_enabled=bool(q.get("personal_answers_enabled", True)),
+                team_answers_enabled=bool(q.get("team_answers_enabled", True)),
+            ))
+    for index, item in enumerate(slides_data, 1):
+        if not isinstance(item, dict):
+            raise HTTPException(400, "Некорректный слайд в пакете")
+        db.add(EventSlide(event_id=event_id, position=index, title=str(item.get("title_ru") or item.get("title_kk") or f"Слайд {index}"),
+                          text=str(item.get("text_ru", "")), title_kk=str(item.get("title_kk", "")), text_kk=str(item.get("text_kk", ""))))
+    for p_index, item in enumerate(programs_data, 1):
+        if not isinstance(item, dict) or not isinstance(item.get("stages", []), list):
+            raise HTTPException(400, "Некорректная программа в пакете")
+        program = GameProgram(event_id=event_id, title=str(item.get("title") or f"Программа {p_index}"),
+                              description=str(item.get("description", "")), status="DRAFT")
+        db.add(program); db.flush()
+        for position, ref in enumerate(item["stages"], 1):
+            stage = stage_by_ref.get(str(ref))
+            if stage is None:
+                raise HTTPException(400, f"Программа ссылается на неизвестный этап: {ref}")
+            db.add(GameProgramStage(program_id=program.id, stage_id=stage.id, position=position))
+    event.slides_initialized = True
+    audit(db, actor, "package.import", event, f"stages={len(stages_data)}; programs={len(programs_data)}")
+    db.commit()
+    return go(event_id, "content", "Пакет импортирован. Программа, этапы, вопросы и слайды готовы к работе.")
+
+
 @router.post("/events/{event_id}/content/fill-default")
 def fill_default_content(event_id: int, db: Session = Depends(get_db), actor=Depends(admin_auth)):
     event = require_event(db, event_id)
@@ -1995,7 +2426,7 @@ async def import_content(
             description=str(stage_data.get("description_ru", "")),
             description_kk=str(stage_data.get("description_kk", "")),
             default_duration_seconds=max(5, min(int(stage_data.get("default_duration_seconds", event.default_question_duration)), 3600)),
-            default_submission_seconds=max(5, min(int(stage_data.get("default_submission_seconds", 20)), 300)),
+            default_submission_seconds=60,
             default_team_points=max(0, min(float(stage_data.get("default_team_points", event.default_team_points)), 10000)),
         )
         db.add(stage); db.flush()
@@ -2007,7 +2438,7 @@ async def import_content(
             answer_kk = str(item.get("correct_answer_kk", "")).strip()
             if not (text_ru or text_kk) or not (answer_ru or answer_kk):
                 raise HTTPException(400, "У вопроса отсутствует текст или правильный ответ")
-            duration = max(5, min(int(item.get("duration_seconds", event.default_question_duration)), 3600))
+            duration = 180
             db.add(Question(
                 stage_id=stage.id, position=question_index,
                 title=str(item.get("title_ru", "")).strip() or str(item.get("title_kk", "")).strip() or f"Вопрос {question_index}",
@@ -2017,7 +2448,7 @@ async def import_content(
                 explanation=str(item.get("explanation_ru", "")),
                 explanation_kk=str(item.get("explanation_kk", "")),
                 duration_seconds=duration,
-                submission_seconds=max(5, min(int(item.get("submission_seconds", 20)), 300)),
+                submission_seconds=60,
                 question_type=QuestionType(item.get("question_type", "TEXT")),
                 options_json=json.dumps(item.get("options", []), ensure_ascii=False),
                 show_anonymous_answers=bool(item.get("show_anonymous_answers", True)),
@@ -2145,7 +2576,7 @@ def update_settings(
     default_team_points: float = Form(...),
     timer_sound_enabled: bool = Form(False),
     registration_code: str = Form(""),
-    display_language: str = Form("BOTH"),
+    display_language: str | None = Form(None),
     db: Session = Depends(get_db),
     actor: str = Depends(admin_auth),
 ):
@@ -2156,7 +2587,8 @@ def update_settings(
     event.timer_sound_enabled = timer_sound_enabled
     if registration_code.strip():
         event.registration_code = registration_code.strip().upper()
-    event.display_language = display_language if display_language in {"RU", "KK", "BOTH"} else "BOTH"
+    if display_language in {"RU", "KK", "BOTH"}:
+        event.display_language = display_language
     audit(
         db, actor, "event.settings", event,
         f"default_duration={event.default_question_duration}; "
@@ -2165,6 +2597,42 @@ def update_settings(
     )
     db.commit()
     return go(event_id, "settings")
+
+
+@router.post("/events/{event_id}/settings/full-reset")
+def full_reset_event(
+    event_id: int, secret_key: str = Form(...), confirmation: str = Form(...),
+    db: Session = Depends(get_db), actor: str = Depends(admin_auth),
+):
+    event = require_event(db, event_id)
+    configured_secret = get_settings().secret_key
+    if not configured_secret or not secrets.compare_digest(secret_key, configured_secret):
+        raise HTTPException(403, "Неверный секретный ключ")
+    if confirmation.strip() != event.name:
+        raise HTTPException(400, "Для подтверждения введите точное название мероприятия")
+    clear_event_data(db, event)
+    audit(db, actor, "event.full_reset", event, "all event data removed")
+    db.commit()
+    return go(event_id, "settings", "Мероприятие полностью очищено. Теперь можно импортировать пакет программы.")
+
+
+@router.post("/events/{event_id}/settings/languages")
+def update_screen_languages(
+    event_id: int,
+    russian_enabled: bool = Form(False),
+    kazakh_enabled: bool = Form(False),
+    screen_theme: str = Form("OUTDOOR"),
+    db: Session = Depends(get_db), actor: str = Depends(admin_auth),
+):
+    event = require_event(db, event_id)
+    if not russian_enabled and not kazakh_enabled:
+        raise HTTPException(400, "Включите хотя бы один язык большого экрана")
+    event.display_language = "BOTH" if russian_enabled and kazakh_enabled else ("KK" if kazakh_enabled else "RU")
+    event.screen_theme = screen_theme if screen_theme in {"OUTDOOR", "WARM", "DARK"} else "OUTDOOR"
+    event.kazakh_primary_applied = True
+    audit(db, actor, "event.screen_languages", event, f"display_language={event.display_language}; theme={event.screen_theme}")
+    db.commit()
+    return go(event_id, "settings", "Языки большого экрана обновлены.")
 
 
 async def send_to_registered_players(players: list[Player], build_text) -> tuple[int, int]:
