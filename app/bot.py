@@ -20,6 +20,7 @@ from .services import (
 )
 from .runtime_state import TEMPORARY_SENDERS
 from .captain_elections import captain_election_watchdog, election_deadline, finalize_captain_election
+from .surveys import feedback_markup
 
 router = Router()
 BOT_RUNTIME = {"configured": False, "connected": False, "username": None, "error": None}
@@ -717,18 +718,22 @@ async def communication_vote(callback: CallbackQuery):
             CommunicationVote.voter_player_id == voter.id,
         ))
         if existing:
-            text = "Сіз дауыс бердіңіз." if voter.preferred_language == "KK" else "Вы уже проголосовали."
-            await callback.answer(text, show_alert=True)
-            return
-        db.add(CommunicationVote(
-            event_id=event_id, team_id=voter.team_id,
-            voter_player_id=voter.id, candidate_player_id=candidate.id,
-        ))
+            existing.candidate_player_id = candidate.id
+            existing.team_id = voter.team_id
+        else:
+            db.add(CommunicationVote(
+                event_id=event_id, team_id=voter.team_id,
+                voter_player_id=voter.id, candidate_player_id=candidate.id,
+            ))
         db.commit()
         kk = voter.preferred_language == "KK"
         candidate_name = candidate.full_name
-    text = f"✅ Дауыс қабылданды: {candidate_name}" if kk else f"✅ Голос принят: {candidate_name}"
-    await callback.message.edit_text(text, reply_markup=None)
+    text = (
+        f"✅ Таңдауыңыз: {candidate_name}\n\nҚате бассаңыз, төменнен басқа қатысушыны таңдаңыз."
+        if kk else
+        f"✅ Ваш выбор: {candidate_name}\n\nЕсли нажали не туда, выберите другого участника ниже."
+    )
+    await callback.message.edit_text(text, reply_markup=callback.message.reply_markup)
     await callback.answer()
 
 
@@ -784,8 +789,16 @@ async def event_review(message: Message, state: FSMContext):
         kk = player.preferred_language == "KK"
         role, language = player.role, player.preferred_language
     await state.clear()
-    text = "Пікіріңізге рақмет!" if kk else "Спасибо за ваш отзыв!"
-    await message.answer(text, reply_markup=main_keyboard(role, language))
+    text = (
+        "Пікіріңізге рақмет! Бағаны өзгерту қажет болса, төмендегі жұлдыздардың бірін таңдаңыз."
+        if kk else
+        "Спасибо за ваш отзыв! Если нужно изменить оценку, выберите другое количество звёзд ниже."
+    )
+    await message.answer(text, reply_markup=feedback_markup(int(data["feedback_event_id"])))
+    await message.answer(
+        "Негізгі мәзір" if kk else "Главное меню",
+        reply_markup=main_keyboard(role, language),
+    )
 
 
 @router.callback_query(F.data.startswith("captainvote:"))
