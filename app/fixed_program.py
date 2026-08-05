@@ -164,9 +164,17 @@ def ensure_fixed_program(db: Session, event: Event) -> GameProgram:
             ])
         event.slides_initialized = True
 
-    program = db.scalar(
-        select(GameProgram).where(GameProgram.event_id == event.id).order_by(GameProgram.id)
-    )
+    # Older installations may contain several legacy programs. The editor
+    # displays the newest one, while a currently running/paused program must
+    # remain authoritative. Previously we updated the oldest program, so the
+    # practice stage was created successfully but stayed invisible in the UI.
+    programs = list(db.scalars(
+        select(GameProgram).where(GameProgram.event_id == event.id)
+        .order_by(GameProgram.created_at.desc(), GameProgram.id.desc())
+    ).all())
+    program = next((item for item in programs if item.status in {"RUNNING", "PAUSED"}), None)
+    if program is None and programs:
+        program = programs[0]
     if program is None:
         program = GameProgram(
             event_id=event.id,

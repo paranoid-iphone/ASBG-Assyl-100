@@ -69,3 +69,27 @@ def test_existing_choice_and_detective_stages_are_reused():
 
         assert choice.system_key == "choice"
         assert detective.system_key == "detective"
+
+
+def test_fixed_stages_are_linked_to_the_active_program_in_legacy_database():
+    with SessionLocal() as db:
+        event = Event(name="Assyl 100", registration_code="ACTIVE")
+        db.add(event)
+        db.flush()
+        old_program = GameProgram(event_id=event.id, title="Old draft", status="DRAFT")
+        active_program = GameProgram(event_id=event.id, title="Current game", status="RUNNING")
+        db.add_all([old_program, active_program])
+        db.flush()
+
+        selected = ensure_fixed_program(db, event)
+        db.commit()
+
+        assert selected.id == active_program.id
+        links = db.scalars(
+            select(GameProgramStage)
+            .where(GameProgramStage.program_id == active_program.id)
+            .order_by(GameProgramStage.position)
+        ).all()
+        assert len(links) == 7
+        assert links[0].stage.system_key == "test"
+        assert len(links[0].stage.questions) == 1

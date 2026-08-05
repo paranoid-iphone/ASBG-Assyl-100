@@ -249,6 +249,9 @@ def event_dashboard(
             selectinload(GameProgram.stage_links).selectinload(GameProgramStage.stage).selectinload(Stage.questions)
         ).where(GameProgram.event_id == event.id).order_by(GameProgram.created_at.desc())
     ).all()
+    # The content editor renders one canonical program. Keep an active program
+    # first when an older database contains several legacy records.
+    programs.sort(key=lambda item: item.status not in {"RUNNING", "PAUSED"})
     slides = db.scalars(select(EventSlide).where(
         EventSlide.event_id == event.id
     ).order_by(EventSlide.position)).all()
