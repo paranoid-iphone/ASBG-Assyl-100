@@ -69,6 +69,92 @@ FIXED_STAGES = (
 )
 
 
+FIRST_STAGE_QUESTIONS = {
+    "what": {
+        "title": "Фунт мяса",
+        "title_kk": "Бір фунт ет",
+        "text": (
+            "В пьесе Уильяма Шекспира «Венецианский купец» обвинитель потребовал вырезать из тела купца "
+            "ровно один фунт мяса — не больше и не меньше. Молодой юрист Бальтазар нашёл в формулировке закона "
+            "деталь, которая спасла купца. Что он заметил?"
+        ),
+        "text_kk": (
+            "Уильям Шекспирдің «Венециялық саудагер» шығармасында айыптаушы саудагердің денесінен дәл бір фунт "
+            "ет кесіп алуды талап етеді: артық та, кем де емес. Бальтазар есімді жас заңгер заңның бір егжей-тегжейін "
+            "тауып, саудагерді аман алып қалады. Ол нені байқады?"
+        ),
+        "answer": "Закон разрешал забрать только мясо, но не кровь: вырезать мясо без кровопролития невозможно.",
+        "answer_kk": "Заң тек ет алуға рұқсат берді, бірақ қан туралы айтылмады: етті қан шығармай кесу мүмкін емес.",
+        "explanation": "Обвинитель мог потребовать ровно фунт мяса, но не имел права пролить ни капли крови.",
+        "explanation_kk": "Айыптаушы дәл бір фунт етті талап ете алды, бірақ бір тамшы да қан төгуге құқығы болмады.",
+    },
+    "where": {
+        "title": "Исчезнувшие следы",
+        "title_kk": "Жоғалған іздер",
+        "text": (
+            "Войско днём перешло воду и подошло к крепости. Вокруг был ровный песок, поэтому после отступления "
+            "остались отчётливые следы. За одну ночь все следы исчезли. Где находилась крепость?"
+        ),
+        "text_kk": (
+            "Әскер күндіз суды кесіп өтіп, қамалға жетеді. Қамалдың айналасы тегіс құм болғандықтан, кейін шегінген "
+            "әскердің іздері анық көрінеді. Бір түннен кейін барлық із жоғалып кетеді. Қамал қайда орналасқан?"
+        ),
+        "answer": "На острове.",
+        "answer_kk": "Аралда.",
+        "explanation": "Ночью прилив поднял уровень воды и смыл следы на песчаном берегу.",
+        "explanation_kk": "Түнгі толысу кезінде су көтеріліп, құмды жағалаудағы іздерді шайып кеткен.",
+    },
+    "when": {
+        "title": "Братья и сёстры",
+        "title_kk": "Ұлдар мен қыздар",
+        "text": (
+            "У одной девочки число братьев равно числу сестёр. У каждого мальчика братьев в два раза меньше, "
+            "чем сестёр. Сколько в семье мальчиков и девочек?"
+        ),
+        "text_kk": (
+            "Бір қыздың ұл бауырлары мен қыз бауырларының саны бірдей. Әр ұлдың ұл бауырларының саны қыз "
+            "бауырларының санынан екі есе аз. Отбасында неше ұл және неше қыз бар?"
+        ),
+        "answer": "3 мальчика и 4 девочки.",
+        "answer_kk": "3 ұл және 4 қыз.",
+        "explanation": "У девочки три брата и три другие сестры; у мальчика два брата и четыре сестры.",
+        "explanation_kk": "Қыздың үш ағасы не інісі және өзінен басқа үш әпкесі не сіңлісі бар; ұлдың екі бауыры және төрт қыз бауыры бар.",
+    },
+}
+
+LEGACY_DEMO_TITLES = {
+    "Три выключателя", "Бой часов", "Бутылка и пробка", "Две верёвки", "Три таблетки",
+}
+
+
+def _install_first_stage_questions(db: Session, stages: list[Stage]) -> None:
+    """Replace only the known demo pack and install the approved bilingual questions."""
+    by_key = {stage.system_key: stage for stage in stages}
+    for stage in stages:
+        for question in list(stage.questions):
+            if stage.system_key in {"what", "where", "when"} and question.title in LEGACY_DEMO_TITLES:
+                db.delete(question)
+        db.flush()
+
+    for key, data in FIRST_STAGE_QUESTIONS.items():
+        stage = by_key[key]
+        if db.scalar(select(Question).where(Question.stage_id == stage.id, Question.title == data["title"])):
+            continue
+        next_position = (db.scalar(select(func.max(Question.position)).where(Question.stage_id == stage.id)) or 0) + 1
+        db.add(Question(
+            stage_id=stage.id,
+            position=next_position,
+            title=data["title"], title_kk=data["title_kk"],
+            text=data["text"], text_kk=data["text_kk"],
+            correct_answer=data["answer"], correct_answer_kk=data["answer_kk"],
+            explanation=data["explanation"], explanation_kk=data["explanation_kk"],
+            duration_seconds=60, submission_seconds=40,
+            personal_answers_enabled=False, team_answers_enabled=True,
+            personal_points=0, team_points=5, show_anonymous_answers=True,
+        ))
+    db.flush()
+
+
 def _legacy_matches(stages: list[Stage]) -> dict[str, Stage]:
     """Attach existing content to the fixed structure without deleting or renaming it."""
     matches: dict[str, Stage] = {stage.system_key: stage for stage in stages if stage.system_key}
@@ -125,7 +211,14 @@ def ensure_fixed_program(db: Session, event: Event) -> GameProgram:
             db.flush()
         else:
             stage.system_key = definition.key
+            if stage.title in {"1 этап · Что? Где? Когда?", "1 этап · Что? Где? Когда"}:
+                stage.title = definition.title
+                stage.title_kk = definition.title_kk
+                stage.description = definition.description
+                stage.description_kk = definition.description_kk
         ordered_stages.append(stage)
+
+    _install_first_stage_questions(db, ordered_stages)
 
     test_stage = next(stage for stage in ordered_stages if stage.system_key == "test")
     # Stage zero is a fixed training step, not a scored game round.

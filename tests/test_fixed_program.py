@@ -38,7 +38,47 @@ def test_fixed_program_preserves_existing_questions_and_is_idempotent():
         assert db.scalar(select(func.count(Stage.id)).where(Stage.event_id == event.id)) == 7
         assert db.scalar(select(func.count(GameProgram.id)).where(GameProgram.event_id == event.id)) == 1
         assert db.scalar(select(func.count(GameProgramStage.id)).where(GameProgramStage.program_id == first.id)) == 7
-        assert db.scalar(select(func.count(Question.id)).where(Question.stage_id == legacy_stage.id)) == 1
+        assert db.scalar(select(func.count(Question.id)).where(Question.stage_id == legacy_stage.id)) == 2
+        assert db.scalar(select(Question).where(
+            Question.stage_id == legacy_stage.id,
+            Question.title == "Существующий вопрос",
+        )) is not None
+
+
+def test_combined_demo_stage_is_split_into_what_where_when():
+    with SessionLocal() as db:
+        event = Event(name="Assyl 100")
+        db.add(event); db.flush()
+        combined = Stage(event_id=event.id, title="1 этап · Что? Где? Когда?", position=1)
+        db.add(combined); db.flush()
+        for position, title in enumerate((
+            "Три выключателя", "Бой часов", "Бутылка и пробка", "Две верёвки", "Три таблетки",
+        ), 1):
+            db.add(Question(
+                stage_id=combined.id, position=position, title=title,
+                text=title, correct_answer=title,
+            ))
+        db.flush()
+
+        ensure_fixed_program(db, event)
+        db.flush()
+
+        stages = {stage.system_key: stage for stage in db.scalars(
+            select(Stage).where(Stage.event_id == event.id)
+        ).all()}
+        assert stages["what"].title == "1 этап · Что?"
+        question_titles = {
+            key: list(db.scalars(select(Question.title).where(Question.stage_id == stages[key].id)).all())
+            for key in ("what", "where", "when")
+        }
+        assert question_titles["what"] == ["Фунт мяса"]
+        assert question_titles["where"] == ["Исчезнувшие следы"]
+        assert question_titles["when"] == ["Братья и сёстры"]
+        assert all(
+            question.submission_seconds == 40
+            for key in ("what", "where", "when")
+            for question in db.scalars(select(Question).where(Question.stage_id == stages[key].id)).all()
+        )
         test_stage = db.scalar(select(Stage).where(Stage.event_id == event.id, Stage.system_key == "test"))
         assert test_stage.title == "Этап 0 · Тестовый раунд"
         assert test_stage.title_kk == "0 кезең · Сынақ раунды"
