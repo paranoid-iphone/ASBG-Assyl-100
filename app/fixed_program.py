@@ -35,16 +35,19 @@ FIXED_STAGES = (
         "what", "1 этап · Что?", "1 кезең · Не?", StageType.QUIZ,
         "Вопросы блока «Что?» со свободным командным ответом.",
         "«Не?» блогының еркін командалық жауабы бар сұрақтары.",
+        submission=40,
     ),
     StageDefinition(
         "where", "1 этап · Где?", "1 кезең · Қайда?", StageType.QUIZ,
         "Вопросы блока «Где?» со свободным командным ответом.",
         "«Қайда?» блогының еркін командалық жауабы бар сұрақтары.",
+        submission=40,
     ),
     StageDefinition(
         "when", "1 этап · Когда?", "1 кезең · Қашан?", StageType.QUIZ,
         "Вопросы блока «Когда?» со свободным командным ответом.",
         "«Қашан?» блогының еркін командалық жауабы бар сұрақтары.",
+        submission=40,
     ),
     StageDefinition(
         "choice", "2 этап · Выбор решения", "2 кезең · Шешімді таңдау", StageType.QUIZ,
@@ -160,6 +163,16 @@ def ensure_fixed_program(db: Session, event: Event) -> GameProgram:
     for choice_question in choice_stage.questions:
         if choice_question.submission_seconds in {20, 30}:
             choice_question.submission_seconds = 60
+
+    # Give the captain enough time to choose a respondent and type the team's
+    # answer in every block of stage one. Upgrade only old standard values so
+    # an organizer's deliberate custom timing remains untouched.
+    for first_stage in (stage for stage in ordered_stages if stage.system_key in {"what", "where", "when"}):
+        if first_stage.default_submission_seconds in {20, 30}:
+            first_stage.default_submission_seconds = 40
+        for question in first_stage.questions:
+            if question.submission_seconds in {20, 30}:
+                question.submission_seconds = 40
 
     if not event.slides_initialized:
         if not event.slides:

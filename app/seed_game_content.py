@@ -153,7 +153,7 @@ def add_question(stage: Stage, position: int, data: dict, question_type: Questio
         correct_answer_kk=data["answer_kk"],
         explanation_kk=data["explanation_kk"],
         duration_seconds=data.get("duration", 60),
-        submission_seconds=60 if question_type in {QuestionType.CHOICE, QuestionType.CHOICE_EXPLANATION} else 20,
+        submission_seconds=60 if question_type in {QuestionType.CHOICE, QuestionType.CHOICE_EXPLANATION} else 40,
         personal_answers_enabled=False,
         team_answers_enabled=True,
         personal_points=0,
@@ -195,7 +195,7 @@ def seed_game_content_for_event(db, event: Event) -> tuple[GameProgram, bool]:
             description="Пять командных вопросов со свободным ответом. Проверка ответов — вручную.",
             description_kk="Еркін жауап берілетін бес командалық сұрақ. Жауаптар қолмен тексеріледі.",
             default_duration_seconds=60,
-            default_submission_seconds=20,
+            default_submission_seconds=40,
             default_team_points=5,
         )
         choice = Stage(
