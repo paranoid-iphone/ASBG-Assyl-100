@@ -134,10 +134,10 @@ def _install_first_stage_questions(db: Session, stages: list[Stage]) -> None:
         db.flush()
 
     stage = by_key["main"]
+    next_position = (db.scalar(select(func.max(Question.position)).where(Question.stage_id == stage.id)) or 0) + 1
     for data in FIRST_STAGE_QUESTIONS.values():
         if db.scalar(select(Question).where(Question.stage_id == stage.id, Question.title == data["title"])):
             continue
-        next_position = (db.scalar(select(func.max(Question.position)).where(Question.stage_id == stage.id)) or 0) + 1
         db.add(Question(
             stage_id=stage.id,
             position=next_position,
@@ -149,6 +149,7 @@ def _install_first_stage_questions(db: Session, stages: list[Stage]) -> None:
             personal_answers_enabled=False, team_answers_enabled=True,
             personal_points=0, team_points=5, show_anonymous_answers=True,
         ))
+        next_position += 1
     db.flush()
 
 
