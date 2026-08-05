@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 
 from app.database import Base, SessionLocal, engine
 from app.detective import generate_cases_for_stage
@@ -52,12 +53,11 @@ def test_generator_creates_shared_case_and_one_clue_per_player():
         all_clues = [clue for case in cases for clue in case.clues]
         assert len(all_clues) == 27
         assert sorted(len(case.clues) for case in cases) == [8, 9, 10]
-        # The same numbered card is intentionally repeated between teams,
-        # while every participant inside one team receives a different fact.
-        assert len({clue.text_ru for clue in all_clues}) == 10
         for case in cases:
-            assert len({clue.text_ru for clue in case.clues}) == len(case.clues)
-            assert sum(clue.is_essential for clue in case.clues) == 8
+            packets = [json.loads(clue.predicate_json)["clues"] for clue in case.clues]
+            assert all(len(packet) >= 1 for packet in packets)
+            assert sorted(number for packet in packets for number in packet) == list(range(1, 11))
+            assert sorted(len(packet) for packet in packets) == ([1] * (2 * len(case.clues) - 10) + [2] * (10 - len(case.clues)))
 
 
 def test_detective_answer_is_single_use_and_ranked():

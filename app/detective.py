@@ -281,16 +281,37 @@ def generate_cases_for_stage(db: Session, stage: Stage) -> list[DetectiveCase]:
         )
         db.add(case)
         db.flush()
-        for index, player in enumerate(players, 1):
-            ru_fact, kk_fact = clue_cards[index - 1]
-            ru = f"КАРТОЧКА УЛИКИ {index}\n\n{ru_fact}\n\nРасскажите эту улику команде."
-            kk = f"АЙҒАҚ КАРТОЧКАСЫ {index}\n\n{kk_fact}\n\nБұл айғақты командаңызға айтыңыз."
-            clue_key = hashlib.sha256(f"{fingerprint}:clue:{index}".encode()).hexdigest()
+        # There are always exactly ten facts per team. Shuffle both facts and
+        # recipients; first give everyone one fact, then distribute the
+        # remaining one or two facts among random participants.
+        rng = random.SystemRandom()
+        shuffled_players = list(players)
+        shuffled_facts = list(enumerate(clue_cards, 1))
+        rng.shuffle(shuffled_players)
+        rng.shuffle(shuffled_facts)
+        packets: dict[int, list[tuple[int, tuple[str, str]]]] = {
+            player.id: [] for player in shuffled_players
+        }
+        for player, fact in zip(shuffled_players, shuffled_facts[:len(players)]):
+            packets[player.id].append(fact)
+        extra_recipients = list(shuffled_players)
+        rng.shuffle(extra_recipients)
+        for player, fact in zip(extra_recipients, shuffled_facts[len(players):]):
+            packets[player.id].append(fact)
+
+        for position, player in enumerate(players, 1):
+            packet = sorted(packets[player.id], key=lambda item: item[0])
+            ru_facts = "\n\n".join(f"УЛИКА №{number}. {fact[0]}" for number, fact in packet)
+            kk_facts = "\n\n".join(f"АЙҒАҚ №{number}. {fact[1]}" for number, fact in packet)
+            ru = f"ВАША КАРТОЧКА РАССЛЕДОВАНИЯ\n\n{ru_facts}\n\nРасскажите все свои улики команде."
+            kk = f"СІЗДІҢ ТЕРГЕУ КАРТОЧКАҢЫЗ\n\n{kk_facts}\n\nБарлық айғақтарыңызды командаңызға айтыңыз."
+            clue_numbers = [number for number, _ in packet]
+            clue_key = hashlib.sha256(f"{fingerprint}:player:{player.id}:{clue_numbers}".encode()).hexdigest()
             db.add(DetectiveClue(
-                case_id=case.id, player_id=player.id, position=index,
+                case_id=case.id, player_id=player.id, position=position,
                 text_ru=ru, text_kk=kk,
-                predicate_json=json.dumps({"shared_case": True, "clue": index}),
-                fingerprint=clue_key, is_essential=index <= 8,
+                predicate_json=json.dumps({"shared_case": True, "clues": clue_numbers}),
+                fingerprint=clue_key, is_essential=any(number <= 8 for number in clue_numbers),
             ))
         created.append(case)
     db.flush()

@@ -195,7 +195,7 @@ sync();setInterval(sync,1000);
   {% for case in s.detective_cases %}<tr>
     <td><b>{{ case.team.name }}</b><div class="muted">{{ case.title_ru }}</div></td>
     <td><span class="badge good">единственное решение</span><br><span class="badge good">все улики необходимы</span></td>
-    <td>{{ case.clues|length }} / {{ case.team.players|selectattr('active')|list|length }}</td>
+    <td>10 улик / {{ case.clues|length }} участников</td>
     <td>{% if case.submission %}{{ case.submission.selected_option }}<div class="muted">{{ case.submission.elapsed_seconds }} сек.</div>{% else %}<span class="muted">ещё не отправлен</span>{% endif %}</td>
     <td>{% if case.submission %}{% if case.submission.is_correct %}<span class="badge good">№{{ case.submission.rank }} · {{ case.submission.points_awarded }} баллов</span>{% else %}<span class="badge warn">неверно · 0 баллов</span>{% endif %}{% else %}—{% endif %}</td>
   </tr>{% endfor %}</table></div>

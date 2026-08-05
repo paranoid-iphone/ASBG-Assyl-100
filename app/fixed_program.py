@@ -216,6 +216,13 @@ def ensure_fixed_program(db: Session, event: Event) -> GameProgram:
                 stage.title_kk = definition.title_kk
                 stage.description = definition.description
                 stage.description_kk = definition.description_kk
+            if definition.key == "detective":
+                # Remove the obsolete wording about separate team cases from
+                # installations created by the old generator.
+                stage.title = definition.title
+                stage.title_kk = definition.title_kk
+                stage.description = definition.description
+                stage.description_kk = definition.description_kk
         ordered_stages.append(stage)
 
     _install_first_stage_questions(db, ordered_stages)
