@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from .config import get_settings
 from .database import get_db
-from .detective import generate_cases_for_stage
+from .detective import DETECTIVE_CLUES, DETECTIVE_REASON_RU, generate_cases_for_stage
 from .detective_runtime import prepared_cases, send_detective_clue, start_detective_stage
 from .models import (
     Answer, AnswerScope, AuditLog, CaptainElection, CaptainVote, CommunicationVote, DetectiveCase, DetectiveClue, DetectiveSubmission,
@@ -483,6 +483,8 @@ def event_dashboard(
         "communication_question_kk": COMMUNICATION_QUESTION_KK,
         "feedback_question_ru": FEEDBACK_QUESTION_RU,
         "feedback_question_kk": FEEDBACK_QUESTION_KK,
+        "detective_clues_ru": [clue_ru for clue_ru, _ in DETECTIVE_CLUES],
+        "detective_reason_ru": DETECTIVE_REASON_RU,
         "response_archive": response_archive,
         "board": leaderboard(db, event.id), "roles": PlayerRole,
         "stage_types": StageType, "detective_statuses": DetectiveStatus,
@@ -586,11 +588,8 @@ def live_control_state(
                 "title": sample_case.title_ru,
                 "story": sample_case.story_ru,
                 "correct_answer": sample_case.correct_option,
-                "team": sample_case.team.name,
-                "clues": [
-                    {"player": clue.player.full_name, "text": clue.text_ru}
-                    for clue in sample_case.clues
-                ],
+                "explanation": DETECTIVE_REASON_RU,
+                "clues": [clue_ru for clue_ru, _ in DETECTIVE_CLUES],
             }
     teams = []
     for team in db.scalars(select(Team).where(
