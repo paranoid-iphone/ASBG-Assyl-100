@@ -188,88 +188,110 @@ def generate_cases_for_stage(db: Session, stage: Stage) -> list[DetectiveCase]:
     teams = db.scalars(select(Team).where(Team.event_id == stage.event_id, Team.active.is_(True)).order_by(Team.id)).all()
     if not teams:
         raise ValueError("Сначала создайте хотя бы одну активную команду.")
-    existing_case_fingerprints = set(db.scalars(select(DetectiveCase.fingerprint)).all())
-    existing_clue_fingerprints = set(db.scalars(select(DetectiveClue.fingerprint)).all())
+    # All teams investigate the same story. We still keep one case row per team,
+    # because clues and the single final submission are team-scoped in the data model.
+    clue_cards = [
+        (
+            "Журнал доступа: дверь архива открыли в 19:38 красной картой № 17.",
+            "Кіру журналы: мұрағат есігі 19:38-де №17 қызыл картамен ашылған.",
+        ),
+        (
+            "Красная карта № 17 закреплена за Борисом. В 19:30 он сообщил охране, что потерял её.",
+            "№17 қызыл карта Бориске тиесілі. 19:30-да ол картаны жоғалтқанын күзетке хабарлаған.",
+        ),
+        (
+            "Камера в холле: в 19:31 Виктор поднял с пола красную карту № 17 и положил её в карман.",
+            "Холл камерасы: 19:31-де Виктор еденнен №17 қызыл картаны көтеріп, қалтасына салған.",
+        ),
+        (
+            "Камера у архива не показывает лица, но в 19:38 зафиксировала человека в светлой куртке.",
+            "Мұрағат камерасы адамның бетін көрсетпейді, бірақ 19:38-де ашық түсті күртеше киген адамды тіркеген.",
+        ),
+        (
+            "На общей фотографии в 19:25 Виктор был в светлой куртке; Айдар, Борис и Галина — в тёмной одежде.",
+            "19:25-тегі ортақ суретте Виктор ашық түсті күртешеде, ал Айдар, Борис және Галина қара киімде болған.",
+        ),
+        (
+            "Запись сцены непрерывно показывает Айдара с 19:35 до 19:42.",
+            "Сахна жазбасында Айдар 19:35-тен 19:42-ге дейін үздіксіз көрінеді.",
+        ),
+        (
+            "Чек кафе и камера кассы подтверждают: Галина оплачивала заказ в 19:38.",
+            "Кафе чегі мен касса камерасы Галинаның 19:38-де тапсырыс төлегенін растайды.",
+        ),
+        (
+            "Камера охраны непрерывно показывает Бориса у стойки с 19:34 до 19:41.",
+            "Күзет камерасында Борис 19:34-тен 19:41-ге дейін күзет орнында көрінеді.",
+        ),
+        (
+            "Эксперт подтвердил: часы всех камер и системы доступа синхронизированы; расхождения во времени нет.",
+            "Сарапшы барлық камералар мен кіру жүйесінің сағаттары бірдей екенін растады; уақыт айырмасы жоқ.",
+        ),
+        (
+            "После 19:31 Виктор не появлялся ни на одной общей камере до 19:41.",
+            "19:31-ден кейін Виктор 19:41-ге дейін бірде-бір жалпы камерада көрінбеген.",
+        ),
+    ]
+    story_ru = (
+        "В 19:40 из закрытого архива исчез прототип. Дверь не взломана: её открыли штатной картой. "
+        "Рядом находились четыре человека — Айдар, Борис, Виктор и Галина. Установите, кто забрал прототип. "
+        "Для доказанного ответа соедините три вещи: кто мог открыть дверь, кто находился у архива и чьи алиби исключают остальных."
+    )
+    story_kk = (
+        "19:40-та жабық мұрағаттан прототип жоғалды. Есік бұзылмаған: ол қызметтік картамен ашылған. "
+        "Жақын жерде төрт адам болды — Айдар, Борис, Виктор және Галина. Прототипті кім алғанын анықтаңыз. "
+        "Дәлелді жауап үшін үш нәрсені байланыстырыңыз: есікті кім аша алды, мұрағат маңында кім болды және кімдердің алибиі бар."
+    )
+    options = ["Айдар", "Борис", "Виктор", "Галина"]
+    shared_key = hashlib.sha256(f"shared-detective-v2:{stage.event_id}:{stage.id}".encode()).hexdigest()
     created = []
     for team in teams:
         players = db.scalars(
             select(Player).where(Player.team_id == team.id, Player.active.is_(True)).order_by(Player.id)
         ).all()
-        if not 4 <= len(players) <= 10:
+        if not 8 <= len(players) <= 10:
             raise ValueError(
-                f"В команде «{team.name}» должно быть от 4 до 10 активных игроков; сейчас {len(players)}."
+                f"В команде «{team.name}» должно быть от 8 до 10 активных игроков; сейчас {len(players)}."
             )
         old = db.scalar(select(DetectiveCase).where(DetectiveCase.stage_id == stage.id, DetectiveCase.team_id == team.id))
         if old:
             db.delete(old)
             db.flush()
-        attempt = 0
-        while True:
-            seed = f"{stage.event_id}:{stage.id}:{team.id}:{attempt}"
-            generated = generate_logic(seed, len(players))
-            solution_key = json.dumps(
-                {"solution": generated.solution, "culprit": generated.culprit},
-                sort_keys=True, ensure_ascii=False,
-            )
-            fingerprint = hashlib.sha256(solution_key.encode()).hexdigest()
-            card_keys = [
-                hashlib.sha256(
-                    f"{fingerprint}:{json.dumps(card, sort_keys=True)}".encode()
-                ).hexdigest()
-                for card in generated.cards
-            ]
-            if fingerprint not in existing_case_fingerprints and not (set(card_keys) & existing_clue_fingerprints):
-                break
-            attempt += 1
-        validation = validate_predicates(generated.cards)
-        if not validation["unique_solution"] or not validation["all_clues_essential"]:
-            raise RuntimeError("Генератор создал непроверяемый кейс.")
-        culprit_profile_ru = ", ".join(
-            CATEGORIES[category][1][generated.solution[category][generated.culprit]]
-            for category in range(3)
-        )
-        culprit_profile_kk = ", ".join(
-            CATEGORIES[category][2][generated.solution[category][generated.culprit]]
-            for category in range(3)
-        )
+        fingerprint = hashlib.sha256(f"{shared_key}:team:{team.id}".encode()).hexdigest()
+        solution_key = json.dumps({"case": "archive_prototype", "culprit": "Виктор"}, ensure_ascii=False)
         case = DetectiveCase(
             stage_id=stage.id,
             team_id=team.id,
-            title_ru=f"Дело команды «{team.name}»",
-            title_kk=f"«{team.name}» командасының ісі",
-            story_ru=(
-                "На выставке пропал экспонат. Рядом находились Алекс, Борис, Виктор и Галина. "
-                "У каждого был свой головной убор, своя верхняя одежда и своя обувь; предметы "
-                "внутри каждой категории не повторяются. Участники команды получили разные улики. "
-                "Обменяйтесь ими и восстановите внешний вид посетителей. Криминалисты установили "
-                f"три общих признака виновного: {culprit_profile_ru}. Найдите единственного человека, "
-                "которому одновременно принадлежат все три признака."
-            ),
-            story_kk=(
-                "Көрмеде жәдігер жоғалды. Оның жанында Алекс, Борис, Виктор және Галина болды. "
-                "Әрқайсысының бас киімі, сырт киімі және аяқ киімі бөлек; әр санаттағы заттар "
-                "қайталанбайды. Команда мүшелеріне әртүрлі айғақтар берілді. Оларды бөлісіп, "
-                "келушілердің сыртқы бейнесін қалпына келтіріңіз. Криминалистер кінәлінің үш белгісін "
-                f"анықтады: {culprit_profile_kk}. Үш белгісі де сәйкес келетін жалғыз адамды табыңыз."
-            ),
-            options_json=json.dumps(SUSPECTS, ensure_ascii=False),
-            correct_option=SUSPECTS[generated.culprit],
+            title_ru="Дело о пропавшем прототипе",
+            title_kk="Жоғалған прототип ісі",
+            story_ru=story_ru,
+            story_kk=story_kk,
+            options_json=json.dumps(options, ensure_ascii=False),
+            correct_option="Виктор",
             solution_json=solution_key,
             fingerprint=fingerprint,
-            validation_json=json.dumps({**validation, "culprit_profile": generated.public_predicates}),
+            validation_json=json.dumps({
+                "shared_case": True,
+                "version": 2,
+                "core_clues": 8,
+                "player_count": len(players),
+                "reason": "Виктор нашёл карту, совпадает с камерой у архива; у остальных подтверждённые алиби.",
+            }, ensure_ascii=False),
             approved=True,
         )
         db.add(case)
         db.flush()
-        for index, (player, card, clue_key) in enumerate(zip(players, generated.cards, card_keys), 1):
-            ru, kk = clue_text(card, f"{fingerprint[:5].upper()}-{index}")
+        for index, player in enumerate(players, 1):
+            ru_fact, kk_fact = clue_cards[index - 1]
+            ru = f"КАРТОЧКА УЛИКИ {index}\n\n{ru_fact}\n\nРасскажите эту улику команде."
+            kk = f"АЙҒАҚ КАРТОЧКАСЫ {index}\n\n{kk_fact}\n\nБұл айғақты командаңызға айтыңыз."
+            clue_key = hashlib.sha256(f"{fingerprint}:clue:{index}".encode()).hexdigest()
             db.add(DetectiveClue(
                 case_id=case.id, player_id=player.id, position=index,
                 text_ru=ru, text_kk=kk,
-                predicate_json=json.dumps(card), fingerprint=clue_key, is_essential=True,
+                predicate_json=json.dumps({"shared_case": True, "clue": index}),
+                fingerprint=clue_key, is_essential=index <= 8,
             ))
-        existing_case_fingerprints.add(fingerprint)
-        existing_clue_fingerprints.update(card_keys)
         created.append(case)
     db.flush()
     return created

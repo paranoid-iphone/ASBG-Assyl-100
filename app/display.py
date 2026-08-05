@@ -121,8 +121,8 @@ def screen_state(token: str, db: Session = Depends(get_db)):
         "detective": None if not detective_stage else {
             "title_ru": detective_stage.title,
             "title_kk": detective_stage.title_kk,
-            "rules_ru": detective_stage.description or "У каждой команды отдельное дело. Обсудите личные улики и передайте капитану один окончательный ответ.",
-            "rules_kk": detective_stage.description_kk or "Әр командаға жеке іс беріледі. Жеке айғақтарды талқылап, капитан арқылы бір соңғы жауап жіберіңіз.",
+            "rules_ru": detective_stage.description or "Все команды расследуют одно дело. Каждый участник получил личную улику. Объедините факты; капитан сможет подтвердить только один окончательный ответ.",
+            "rules_kk": detective_stage.description_kk or "Барлық командалар бір істі зерттейді. Әр қатысушы жеке айғақ алды. Деректерді біріктіріңіз; капитан бір ғана соңғы жауапты растай алады.",
             "answered": detective_answered,
             "total": len([team for team in event.teams if team.active]),
         },

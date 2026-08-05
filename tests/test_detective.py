@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from app.database import Base, SessionLocal, engine
-from app.detective import generate_cases_for_stage, validate_predicates
+from app.detective import generate_cases_for_stage
 from app.models import (
     DetectiveStatus, Event, Player, PlayerRole, Stage, StageType, Team,
 )
@@ -28,7 +28,7 @@ def create_team_with_players(db, event, name, code, player_count=10):
     return team
 
 
-def test_generator_creates_unique_essential_clue_per_player():
+def test_generator_creates_shared_case_and_one_clue_per_player():
     with SessionLocal() as db:
         event = Event(name="Detective")
         db.add(event)
@@ -46,16 +46,18 @@ def test_generator_creates_unique_essential_clue_per_player():
         assert len(cases) == 3
         assert {case.team_id for case in cases} == {first.id, second.id, third.id}
         assert len({case.fingerprint for case in cases}) == 3
+        assert {case.title_ru for case in cases} == {"Дело о пропавшем прототипе"}
+        assert {case.story_ru for case in cases}.__len__() == 1
+        assert {case.correct_option for case in cases} == {"Виктор"}
         all_clues = [clue for case in cases for clue in case.clues]
         assert len(all_clues) == 27
         assert sorted(len(case.clues) for case in cases) == [8, 9, 10]
-        assert len({clue.text_ru for clue in all_clues}) == 27
+        # The same numbered card is intentionally repeated between teams,
+        # while every participant inside one team receives a different fact.
+        assert len({clue.text_ru for clue in all_clues}) == 10
         for case in cases:
-            report = validate_predicates([
-                __import__("json").loads(clue.predicate_json) for clue in case.clues
-            ])
-            assert report["unique_solution"] is True
-            assert report["all_clues_essential"] is True
+            assert len({clue.text_ru for clue in case.clues}) == len(case.clues)
+            assert sum(clue.is_essential for clue in case.clues) == 8
 
 
 def test_detective_answer_is_single_use_and_ranked():
