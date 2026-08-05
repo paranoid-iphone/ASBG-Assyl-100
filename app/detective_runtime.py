@@ -35,6 +35,13 @@ async def send_detective_clue(bot: Bot, stage_id: int, clue: DetectiveClue) -> b
     if not clue.player.telegram_user_id:
         mark_clue_delivery(stage_id, clue.player.id, "failed", "Telegram не подключён")
         return False
+    try:
+        await bot.send_message(clue.player.telegram_user_id, clue_message(clue))
+        mark_clue_delivery(stage_id, clue.player.id, "delivered")
+        return True
+    except Exception as exc:
+        mark_clue_delivery(stage_id, clue.player.id, "failed", str(exc))
+        return False
 
 
 def detective_answer_markup(case: DetectiveCase) -> InlineKeyboardMarkup:
@@ -67,13 +74,6 @@ async def send_detective_answer_panel(bot: Bot, case: DetectiveCase, captain: Pl
         )
         return True
     except Exception:
-        return False
-    try:
-        await bot.send_message(clue.player.telegram_user_id, clue_message(clue))
-        mark_clue_delivery(stage_id, clue.player.id, "delivered")
-        return True
-    except Exception as exc:
-        mark_clue_delivery(stage_id, clue.player.id, "failed", str(exc))
         return False
 
 

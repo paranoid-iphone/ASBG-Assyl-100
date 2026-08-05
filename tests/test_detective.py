@@ -2,10 +2,10 @@ import asyncio
 from datetime import datetime
 import json
 
-from app.admin import finish_live_detective, launch_single_stage
+from app.admin import finish_live_detective, launch_single_stage, live_control_state
 from app.database import Base, SessionLocal, engine
 from app.detective import generate_cases_for_stage
-from app.detective_runtime import detective_answer_markup
+from app.detective_runtime import detective_answer_markup, send_detective_answer_panel, send_detective_clue
 from app.models import (
     DetectiveStatus, Event, Player, PlayerRole, Stage, StageType, Team,
 )
@@ -30,6 +30,14 @@ def create_team_with_players(db, event, name, code, player_count=10):
         ))
     db.flush()
     return team
+
+
+class FakeBot:
+    def __init__(self):
+        self.messages = []
+
+    async def send_message(self, chat_id, text, reply_markup=None):
+        self.messages.append((chat_id, text, reply_markup))
 
 
 def test_generator_creates_shared_case_and_one_clue_per_player():
@@ -142,6 +150,8 @@ def test_captain_gets_options_and_admin_can_finish_detective_early():
         )
         db.add(stage); db.flush()
         case = generate_cases_for_stage(db, stage)[0]
+        captain = next(player for player in case.team.players if player.role == PlayerRole.CAPTAIN)
+        captain.telegram_user_id = "10001"
         event.current_detective_stage_id = stage.id
         db.commit()
 
@@ -151,6 +161,17 @@ def test_captain_gets_options_and_admin_can_finish_detective_early():
             button.callback_data.startswith(f"detective:pick:{case.id}:")
             for row in markup.inline_keyboard for button in row
         )
+        fake_bot = FakeBot()
+        case.clues[0].player.telegram_user_id = None
+        assert asyncio.run(send_detective_clue(fake_bot, stage.id, case.clues[0])) is False
+        case.clues[0].player.telegram_user_id = "10002"
+        assert asyncio.run(send_detective_clue(fake_bot, stage.id, case.clues[0])) is True
+        assert asyncio.run(send_detective_answer_panel(fake_bot, case, captain)) is True
+        assert fake_bot.messages[-1][2] is not None
+
+        state = live_control_state(event.id, db, "test")
+        assert state["detective"]["materials"]["correct_answer"] == case.correct_option
+        assert state["detective"]["materials"]["clues"]
 
         finish_live_detective(event.id, db, "test")
         db.refresh(event); db.refresh(stage)

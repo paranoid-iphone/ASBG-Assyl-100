@@ -353,12 +353,30 @@ def live_control_state(
         }
     detective_stage = db.get(Stage, event.current_detective_stage_id) if event.current_detective_stage_id else None
     detective_submissions = {}
+    detective_materials = None
     if detective_stage:
         detective_submissions = {
             submission.team_id: submission for submission in db.scalars(select(DetectiveSubmission).where(
                 DetectiveSubmission.stage_id == detective_stage.id
             )).all()
         }
+        sample_case = db.scalar(
+            select(DetectiveCase)
+            .options(selectinload(DetectiveCase.clues).selectinload(DetectiveClue.player))
+            .where(DetectiveCase.stage_id == detective_stage.id)
+            .order_by(DetectiveCase.team_id)
+        )
+        if sample_case:
+            detective_materials = {
+                "title": sample_case.title_ru,
+                "story": sample_case.story_ru,
+                "correct_answer": sample_case.correct_option,
+                "team": sample_case.team.name,
+                "clues": [
+                    {"player": clue.player.full_name, "text": clue.text_ru}
+                    for clue in sample_case.clues
+                ],
+            }
     teams = []
     for team in db.scalars(select(Team).where(
         Team.event_id == event.id, Team.active.is_(True)
@@ -474,6 +492,7 @@ def live_control_state(
         "detective": None if not detective_stage else {
             "id": detective_stage.id, "title": detective_stage.title,
             "answered": detective_answered, "total": detective_total,
+            "materials": detective_materials,
         },
         "timer": {
             "remaining": remaining,
