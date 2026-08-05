@@ -18,7 +18,10 @@ def election_deadline(election: CaptainElection) -> datetime:
     return election.expires_at or (election.created_at + timedelta(seconds=ELECTION_DURATION_SECONDS))
 
 
-async def start_captain_election_for_team(db, team: Team, bot: Bot, actor: str) -> CaptainElection:
+async def start_captain_election_for_team(
+    db, team: Team, bot: Bot, actor: str, duration_seconds: int = ELECTION_DURATION_SECONDS,
+) -> CaptainElection:
+    duration_seconds = max(10, min(int(duration_seconds), 600))
     candidates = [player for player in team.players if player.active and player.telegram_user_id]
     if len(candidates) < 2:
         raise ValueError(f"{team.name}: нужны минимум два зарегистрированных участника")
@@ -29,7 +32,7 @@ async def start_captain_election_for_team(db, team: Team, bot: Bot, actor: str) 
         old.finished_at = datetime.utcnow()
     election = CaptainElection(
         team_id=team.id,
-        expires_at=datetime.utcnow() + timedelta(seconds=ELECTION_DURATION_SECONDS),
+        expires_at=datetime.utcnow() + timedelta(seconds=duration_seconds),
     )
     db.add(election); db.flush()
     delivered = failed = 0
@@ -43,11 +46,11 @@ async def start_captain_election_for_team(db, team: Team, bot: Bot, actor: str) 
         ])
         text = (
             "Команда капитанын таңдаңыз. Өзіңізге дауыс беруге болмайды.\n\n"
-            f"Дауыс беруге {ELECTION_DURATION_SECONDS} секунд беріледі.\n"
+            f"Дауыс беруге {duration_seconds} секунд беріледі.\n"
             f"Дауыс бергендер: 0 / {len(candidates)}."
             if player.preferred_language == "KK" else
             "Выберите капитана команды. Голосовать за себя нельзя.\n\n"
-            f"У вас есть {ELECTION_DURATION_SECONDS} секунд.\n"
+            f"У вас есть {duration_seconds} секунд.\n"
             f"Проголосовало: 0 из {len(candidates)}."
         )
         try:

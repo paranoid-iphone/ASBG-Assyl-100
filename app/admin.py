@@ -1,7 +1,7 @@
 import secrets
 import json
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 from aiogram import Bot
@@ -500,10 +500,16 @@ def add_live_time(
     actor: str = Depends(admin_auth),
 ):
     event = require_event(db, event_id)
-    if not event.timer_started_at:
+    if not event.timer_started_at and event.display_mode != "CAPTAIN_ELECTION_READY":
         raise HTTPException(409, "Сейчас таймер не запущен")
     seconds = max(-300, min(seconds, 1800))
     event.timer_duration_seconds = max(0, event.timer_duration_seconds + seconds)
+    if event.display_mode == "CAPTAIN_ELECTION_RUNNING":
+        for election in db.scalars(select(CaptainElection).join(Team).where(
+            Team.event_id == event.id, CaptainElection.active.is_(True)
+        )).all():
+            deadline = election.expires_at or datetime.utcnow()
+            election.expires_at = max(datetime.utcnow(), deadline + timedelta(seconds=seconds))
     audit(db, actor, "live.timer_adjust", event, f"seconds={seconds}")
     db.commit()
     return {"ok": True}

@@ -1,8 +1,11 @@
+from datetime import datetime, timedelta
+
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.database import Base, SessionLocal, engine
 from app.main import app
-from app.models import Event, EventSlide, GameProgram, GameProgramStage, Player, PlayerRole, Question, Stage, Team
+from app.models import CaptainElection, Event, EventSlide, GameProgram, GameProgramStage, Player, PlayerRole, Question, Stage, Team
 from app.runtime_state import CUSTOM_SLIDES
 
 
@@ -122,3 +125,30 @@ def test_completed_captain_slide_reopens_when_captain_is_removed():
         state = client.get(f"/api/screen/{token}").json()
         assert state["mode"] == "CAPTAIN_ELECTION_READY"
         assert state["captain_election"]["missing"] == ["Alpha"]
+
+
+def test_captain_timer_adjustment_changes_screen_and_election_deadline():
+    with SessionLocal() as db:
+        event = Event(
+            name="Election timer", display_mode="CAPTAIN_ELECTION_RUNNING",
+            timer_started_at=datetime.utcnow(), timer_duration_seconds=60,
+        )
+        db.add(event); db.flush()
+        team = Team(event_id=event.id, name="Alpha", code="ALPHA")
+        db.add(team); db.flush()
+        election = CaptainElection(
+            team_id=team.id, active=True,
+            expires_at=datetime.utcnow() + timedelta(seconds=60),
+        )
+        db.add(election); db.commit()
+        token, election_id = event.display_token, election.id
+
+    with TestClient(app) as client:
+        response = client.post(f"/api/screen/{token}/timer-adjust?seconds=30")
+        assert response.status_code == 200
+
+    with SessionLocal() as db:
+        event = db.scalar(select(Event).where(Event.display_token == token))
+        election = db.get(CaptainElection, election_id)
+        assert event.timer_duration_seconds == 90
+        assert election.expires_at > datetime.utcnow() + timedelta(seconds=75)

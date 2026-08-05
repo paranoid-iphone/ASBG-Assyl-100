@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from aiogram import Bot
@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from .database import get_db
 from .detective_runtime import finish_detective_stage, start_detective_stage
-from .models import Answer, AnswerScope, CaptainElection, DetectiveSubmission, Event, EventSlide, GameProgram, GameProgramStage, PlayerRole, Question, QuestionStatus, Stage, StageType
+from .models import Answer, AnswerScope, CaptainElection, DetectiveSubmission, Event, EventSlide, GameProgram, GameProgramStage, PlayerRole, Question, QuestionStatus, Stage, StageType, Team
 from .config import get_settings
 from .captain_elections import ELECTION_DURATION_SECONDS, start_captain_election_for_team
 from .services import leaderboard, set_question_status
@@ -525,9 +525,16 @@ def previous_screen(token: str, db: Session = Depends(get_db)):
 @router.post("/api/screen/{token}/timer-adjust")
 def adjust_screen_timer(token: str, seconds: int, db: Session = Depends(get_db)):
     event = event_by_token(db, token)
-    if event.display_mode not in {"TIMER_READY", "TIMER", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION", "SUBMISSION_PAUSED", "DETECTIVE"}:
+    if event.display_mode not in {"CAPTAIN_ELECTION_READY", "CAPTAIN_ELECTION_RUNNING", "TIMER_READY", "TIMER", "TIMER_PAUSED", "SUBMISSION_READY", "SUBMISSION", "SUBMISSION_PAUSED", "DETECTIVE"}:
         raise HTTPException(409, "На текущем слайде нет таймера")
-    event.timer_duration_seconds = max(0, min(7200, event.timer_duration_seconds + max(-300, min(seconds, 1800))))
+    seconds = max(-300, min(seconds, 1800))
+    event.timer_duration_seconds = max(0, min(7200, event.timer_duration_seconds + seconds))
+    if event.display_mode == "CAPTAIN_ELECTION_RUNNING":
+        for election in db.scalars(select(CaptainElection).join(Team).where(
+            Team.event_id == event.id, CaptainElection.active.is_(True)
+        )).all():
+            deadline = election.expires_at or datetime.utcnow()
+            election.expires_at = max(datetime.utcnow(), deadline + timedelta(seconds=seconds))
     db.commit()
     return {"action": "timer_adjust", "seconds": seconds}
 
@@ -553,13 +560,15 @@ async def start_screen_timer(token: str, db: Session = Depends(get_db)):
                 ))
                 if not active:
                     try:
-                        await start_captain_election_for_team(db, team, bot, "screen")
+                        await start_captain_election_for_team(
+                            db, team, bot, "screen", event.timer_duration_seconds,
+                        )
                     except ValueError as exc:
                         raise HTTPException(409, str(exc))
         finally:
             await bot.session.close()
         event.display_mode = "CAPTAIN_ELECTION_RUNNING"
-        event.timer_duration_seconds = ELECTION_DURATION_SECONDS
+        event.timer_duration_seconds = max(10, min(event.timer_duration_seconds, 600))
         event.timer_started_at = datetime.utcnow()
         db.commit()
         return {"action": "captain_election_start", "mode": event.display_mode}
