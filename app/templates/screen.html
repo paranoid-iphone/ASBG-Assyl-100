@@ -10,6 +10,7 @@ body{margin:0;background:#0c1220;color:#f8fafc;font-family:Inter,system-ui;overf
 .screen{height:100vh;display:flex;flex-direction:column;align-items:center;text-align:center;padding:5vh 6vw;cursor:pointer;user-select:none;background:radial-gradient(circle at 85% 15%,#243b80 0,transparent 35%),linear-gradient(145deg,#0c1220,#121b31)}
 .center{flex:1;width:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
 .eyebrow,.question-title,.answer-label{text-transform:uppercase;letter-spacing:.18em;color:#91a7ff;font-size:1.3vw;font-weight:800}
+.practice-badge{position:fixed;top:4vh;left:50%;transform:translateX(-50%);padding:.7vw 1.5vw;border:1px solid #f5c76b;background:#7a4b08;color:#fff4cf;border-radius:999px;font-size:1.25vw;font-weight:900;letter-spacing:.06em;text-transform:uppercase;box-shadow:0 12px 35px #0007;z-index:4}
 .event{font-size:6vw;line-height:1.02;margin:.15em 0}.description{font-size:2vw;color:#b7c2d8;max-width:70vw}
 .question{font-size:3.8vw;line-height:1.18;max-width:88vw;margin:.35em auto}
 .bilingual{display:grid;grid-template-columns:1fr 1fr;gap:4vw;width:100%;align-items:center}.language-block{padding:1vw 2vw}.language-block+.language-block{border-left:1px solid #ffffff28}.lang{font-size:1vw;color:#91a7ff;text-transform:uppercase;letter-spacing:.15em;font-weight:800;margin-bottom:1.2vw}.bilingual .question{font-size:2.7vw}.bilingual .answer{font-size:3.5vw}.bilingual .explanation{font-size:1.4vw}
@@ -107,6 +108,9 @@ function render(d){
     html=`<div class="answer-label">Версии команд / Командалардың нұсқалары</div><div class="center">${cards?`<div class="answer-wall">${cards}</div>`:'<div class="description">Команды не успели отправить ответы</div>'}</div>`;
   }else{
     html=`<div class="center"><div class="event">${esc(d.event)}</div></div>`;
+  }
+  if(q.stage?.key==='test'&&['QUESTION','TIMER_READY','TIMER','TIMER_PAUSED','SUBMISSION_READY','SUBMISSION','SUBMISSION_PAUSED','ANSWER','TEAM_ANSWERS'].includes(d.mode)){
+    html='<div class="practice-badge">Тестовый вопрос · Сынақ сұрағы · 0 баллов</div>'+html;
   }
   app.innerHTML=html;
   document.getElementById('electionStartMain')?.addEventListener('click',event=>{event.stopPropagation();timerCommand('start')});

@@ -927,6 +927,63 @@ def finish_live_program(
     return {"ok": True}
 
 
+@router.post("/events/{event_id}/live/restart")
+def restart_live_program(
+    event_id: int,
+    db: Session = Depends(get_db),
+    actor: str = Depends(admin_auth),
+):
+    """Restart game progress without touching teams, captains, or manual bonuses."""
+    event = require_event(db, event_id)
+    program = db.scalar(select(GameProgram).where(
+        GameProgram.event_id == event.id,
+        GameProgram.status.in_(["RUNNING", "PAUSED"]),
+    ).order_by(GameProgram.started_at.desc()))
+    if not program:
+        raise HTTPException(409, "Сейчас нет запущенной игры")
+
+    stage_ids = list(db.scalars(select(GameProgramStage.stage_id).where(
+        GameProgramStage.program_id == program.id
+    )).all())
+    question_ids = list(db.scalars(select(Question.id).where(
+        Question.stage_id.in_(stage_ids or [-1])
+    )).all())
+    db.execute(delete(TeamQuestionPrompt).where(TeamQuestionPrompt.question_id.in_(question_ids or [-1])))
+    db.execute(delete(Answer).where(Answer.question_id.in_(question_ids or [-1])))
+    db.execute(delete(DetectiveSubmission).where(DetectiveSubmission.stage_id.in_(stage_ids or [-1])))
+    for question in db.scalars(select(Question).where(Question.id.in_(question_ids or [-1]))).all():
+        question.status = QuestionStatus.DRAFT
+        question.opened_at = None
+        question.closed_at = None
+    for stage in db.scalars(select(Stage).where(
+        Stage.id.in_(stage_ids or [-1]), Stage.stage_type == StageType.DETECTIVE
+    )).all():
+        stage.detective_status = DetectiveStatus.READY if stage.detective_cases else DetectiveStatus.DRAFT
+
+    for key in [key for key in TEAM_DELIVERY if key[0] in question_ids]:
+        TEAM_DELIVERY.pop(key, None)
+    for key in [key for key in CLUE_DELIVERY if key[0] in stage_ids]:
+        CLUE_DELIVERY.pop(key, None)
+    for key in [key for key in TEMPORARY_SENDERS if key[0] == event.id]:
+        TEMPORARY_SENDERS.pop(key, None)
+    CUSTOM_SLIDES.pop(event.id, None)
+
+    program.status = "RUNNING"
+    program.started_at = datetime.utcnow()
+    program.finished_at = None
+    event.display_mode = "INTRO"
+    event.current_question_id = None
+    event.current_detective_stage_id = None
+    event.current_slide_id = None
+    event.pause_snapshot_json = ""
+    event.timer_started_at = None
+    event.timer_duration_seconds = ELECTION_DURATION_SECONDS
+    clear_persistent_navigation(event)
+    audit(db, actor, "live.restart", event, f"program={program.id}; questions={len(question_ids)}")
+    db.commit()
+    return {"ok": True, "status": "RUNNING"}
+
+
 @router.post("/events/{event_id}/teams")
 def create_team(event_id: int, name: str = Form(...), code: str = Form(""), capacity: int = Form(10), db: Session = Depends(get_db), actor=Depends(admin_auth)):
     require_event(db, event_id)
