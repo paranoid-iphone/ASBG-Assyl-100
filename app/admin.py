@@ -30,7 +30,6 @@ from .runtime_state import (
 )
 from .public_url import public_base_url
 from .seed_game_content import seed_game_content_for_event
-from .fixed_program import ensure_fixed_program
 from .captain_elections import ELECTION_DURATION_SECONDS, start_captain_election_for_team
 from .surveys import (
     COMMUNICATION_QUESTION_KK, COMMUNICATION_QUESTION_RU,
@@ -377,10 +376,6 @@ def event_dashboard(
         db.commit()
     if not event.timings_v2_applied:
         apply_three_minute_timings(db, event)
-        db.commit()
-    has_content = db.scalar(select(Stage.id).where(Stage.event_id == event.id).limit(1)) is not None
-    if has_content or not event.slides_initialized:
-        ensure_fixed_program(db, event)
         db.commit()
     teams = db.scalars(select(Team).where(Team.event_id == event.id).order_by(Team.name)).all()
     players = db.scalars(select(Player).join(Team).where(Team.event_id == event.id).order_by(Team.name, Player.full_name)).all()
@@ -1789,12 +1784,6 @@ async def launch_program(
     start_at_first_stage: bool = False,
 ):
     event = require_event(db, event_id)
-    # Synchronize the fixed event structure at the point of launch as well as
-    # when the editor is opened. This also upgrades older databases where the
-    # practice stage existed without its zero-point question.
-    if not start_at_first_stage:
-        ensure_fixed_program(db, event)
-        db.flush()
     program = db.scalar(select(GameProgram).options(
         selectinload(GameProgram.stage_links).selectinload(GameProgramStage.stage).selectinload(Stage.questions)
     ).where(GameProgram.id == program_id, GameProgram.event_id == event_id))
@@ -1859,11 +1848,6 @@ async def launch_single_stage(
     db: Session = Depends(get_db), actor=Depends(admin_auth),
 ):
     event = require_event(db, event_id)
-    # Synchronize before creating the temporary one-stage program. Otherwise
-    # ensure_fixed_program can mistake that newest temporary program for the
-    # canonical full game and attach every stage to it.
-    ensure_fixed_program(db, event)
-    db.flush()
     stage = db.get(Stage, stage_id)
     if not stage or stage.event_id != event_id:
         raise HTTPException(404, "Этап не найден")
@@ -2231,6 +2215,7 @@ def export_event_package(event_id: int, db: Session = Depends(get_db), actor=Dep
             "default_team_points": event.default_team_points,
             "timer_sound_enabled": event.timer_sound_enabled,
             "display_language": event.display_language,
+            "screen_theme": event.screen_theme,
         },
         "slides": [{
             "position": slide.position, "title_ru": slide.title, "text_ru": slide.text,
@@ -2297,11 +2282,16 @@ async def import_event_package(
     event_data = payload.get("event", {}) if isinstance(payload.get("event", {}), dict) else {}
     event.name = str(event_data.get("name", event.name)).strip() or event.name
     event.description = str(event_data.get("description", event.description))
-    event.default_question_duration = 180
+    event.default_question_duration = max(5, min(int(event_data.get("default_question_duration", 180)), 3600))
     event.default_personal_points = max(0, min(float(event_data.get("default_personal_points", 1)), 10000))
     event.default_team_points = max(0, min(float(event_data.get("default_team_points", 5)), 10000))
     event.timer_sound_enabled = bool(event_data.get("timer_sound_enabled", True))
-    event.display_language = "KK"
+    display_language = str(event_data.get("display_language", "KK")).upper()
+    event.display_language = display_language if display_language in {"RU", "KK", "BOTH"} else "KK"
+    screen_theme = str(event_data.get("screen_theme", "OUTDOOR")).upper()
+    event.screen_theme = screen_theme if screen_theme in {"OUTDOOR", "WARM", "DARK"} else "OUTDOOR"
+    event.timings_v2_applied = True
+    event.kazakh_primary_applied = True
     stage_by_ref: dict[str, Stage] = {}
     for index, item in enumerate(stages_data, 1):
         if not isinstance(item, dict):
@@ -2319,8 +2309,8 @@ async def import_event_package(
             title=str(item.get("title_ru") or item.get("title_kk") or f"Этап {index}"),
             title_kk=str(item.get("title_kk", "")), description=str(item.get("description_ru", "")),
             description_kk=str(item.get("description_kk", "")),
-            default_duration_seconds=180,
-            default_submission_seconds=60,
+            default_duration_seconds=max(5, min(int(item.get("default_duration_seconds", 180)), 3600)),
+            default_submission_seconds=max(5, min(int(item.get("default_submission_seconds", 60)), 3600)),
             default_team_points=max(0, min(float(item.get("default_team_points", 5)), 10000)),
             detective_duration_seconds=max(30, min(int(item.get("detective_duration_seconds", 1200)), 7200)),
             detective_points=str(item.get("detective_points", "30,25,20,17,14,10")),
@@ -2342,8 +2332,8 @@ async def import_event_package(
                 text_kk=str(q.get("text_kk", "")), correct_answer=str(q.get("correct_answer_ru") or q.get("correct_answer_kk") or ""),
                 correct_answer_kk=str(q.get("correct_answer_kk", "")), explanation=str(q.get("explanation_ru", "")),
                 explanation_kk=str(q.get("explanation_kk", "")),
-                duration_seconds=180,
-                submission_seconds=60,
+                duration_seconds=max(5, min(int(q.get("duration_seconds", 180)), 3600)),
+                submission_seconds=max(5, min(int(q.get("submission_seconds", 60)), 3600)),
                 question_type=q_type, options_json=json.dumps(q.get("options", []), ensure_ascii=False),
                 show_anonymous_answers=bool(q.get("show_anonymous_answers", True)),
                 personal_points=max(0, min(float(q.get("personal_points", 1)), 10000)),

@@ -245,7 +245,7 @@
     <input type="file" name="package_file" accept=".json,application/json" required>
     <button>Импортировать полный пакет</button>
   </form>
-  <p class="muted">Импорт выполняется в пустую программу. Если здесь уже есть этапы, сначала скачайте резервную копию и сделайте полный сброс в Настройках.</p>
+  <p class="muted">Импорт выполняется в мероприятие без этапов. Новое мероприятие изначально пустое; если этапы уже есть, сначала скачайте резервную копию и сделайте полный сброс в Настройках.</p>
   <details><summary>Старый формат: только этапы и вопросы</summary><div class="utility-content"><a class="screen-link" href="/admin/events/{{ event.id }}/content/export">Скачать старый JSON</a><form method="post" action="/admin/events/{{ event.id }}/content/import" enctype="multipart/form-data"><input type="file" name="content_file" accept=".json,application/json" required><button>Добавить этапы и вопросы</button></form></div></details>
 </div></details>
 <script>
