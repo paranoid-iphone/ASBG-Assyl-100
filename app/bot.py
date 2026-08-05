@@ -188,16 +188,64 @@ async def register_command(message: Message, state: FSMContext):
     await begin_registration(message, state)
 
 
+def language_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="Русский", callback_data="setlang:RU"),
+        InlineKeyboardButton(text="Қазақша", callback_data="setlang:KK"),
+    ]])
+
+
+@router.message(Command("language"))
+@router.message(Command("lang"))
 @router.message(F.text == "🌐 Тіл / Язык")
 async def choose_language(message: Message, state: FSMContext):
-    await state.set_state(InputState.language)
     await message.answer(
         "Выберите язык / Тілді таңдаңыз",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="Русский"), KeyboardButton(text="Қазақша")]],
-            resize_keyboard=True,
-        ),
+        reply_markup=language_markup(),
     )
+
+
+@router.callback_query(F.data.startswith("setlang:"))
+async def language_selected_inline(callback: CallbackQuery, state: FSMContext):
+    language = callback.data.split(":", 1)[1]
+    if language not in {"RU", "KK"}:
+        await callback.answer("Язык недоступен.", show_alert=True)
+        return
+    with SessionLocal() as db:
+        telegram_user_id = str(callback.from_user.id)
+        player = get_player_by_telegram(db, telegram_user_id)
+        pending = None if player else db.scalar(select(PendingRegistration).where(
+            PendingRegistration.telegram_user_id == telegram_user_id
+        ))
+        if player:
+            player.preferred_language = language
+            role = player.role
+            db.commit()
+        elif pending:
+            pending.preferred_language = language
+            pending_data = {
+                "name": pending.full_name,
+                "event_name": pending.event.name,
+                "language": language,
+            }
+            db.commit()
+            role = None
+        else:
+            pending_data = None
+            role = None
+    await state.clear()
+    text = "Тіл қазақшаға ауыстырылды." if language == "KK" else "Язык изменён на русский."
+    await callback.message.edit_text(text, reply_markup=None)
+    await callback.answer(text)
+    if player:
+        await callback.message.answer(
+            "Негізгі мәзір" if language == "KK" else "Главное меню",
+            reply_markup=main_keyboard(role, language),
+        )
+    elif pending:
+        await show_pending_status(callback.message, pending_data)
+    else:
+        await begin_registration(callback.message, state)
 
 
 @router.message(InputState.language, F.text.in_({"Русский", "Қазақша"}))
