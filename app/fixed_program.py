@@ -35,19 +35,9 @@ FIXED_STAGES = (
         points=0,
     ),
     StageDefinition(
-        "what", "1 этап · Что?", "1 кезең · Не?", StageType.QUIZ,
-        "Вопросы блока «Что?» со свободным командным ответом.",
-        "«Не?» блогының еркін командалық жауабы бар сұрақтары.",
-    ),
-    StageDefinition(
-        "where", "1 этап · Где?", "1 кезең · Қайда?", StageType.QUIZ,
-        "Вопросы блока «Где?» со свободным командным ответом.",
-        "«Қайда?» блогының еркін командалық жауабы бар сұрақтары.",
-    ),
-    StageDefinition(
-        "when", "1 этап · Когда?", "1 кезең · Қашан?", StageType.QUIZ,
-        "Вопросы блока «Когда?» со свободным командным ответом.",
-        "«Қашан?» блогының еркін командалық жауабы бар сұрақтары.",
+        "main", "1 этап · Командные вопросы", "1 кезең · Командалық сұрақтар", StageType.QUIZ,
+        "Единый этап со всеми командными вопросами и свободным ответом.",
+        "Барлық командалық сұрақтар мен еркін жауаптардан тұратын бірыңғай кезең.",
     ),
     StageDefinition(
         "choice", "2 этап · Выбор решения", "2 кезең · Шешімді таңдау", StageType.QUIZ,
@@ -132,7 +122,7 @@ def _install_first_stage_questions(db: Session, stages: list[Stage]) -> None:
     by_key = {stage.system_key: stage for stage in stages}
     for stage in stages:
         for question in list(stage.questions):
-            if stage.system_key in {"what", "where", "when"} and question.title in LEGACY_DEMO_TITLES:
+            if stage.system_key == "main" and question.title in LEGACY_DEMO_TITLES:
                 # Production databases can already contain rehearsal answers
                 # and Telegram prompt references for the demo pack. Remove
                 # those dependants first to satisfy PostgreSQL foreign keys.
@@ -143,8 +133,8 @@ def _install_first_stage_questions(db: Session, stages: list[Stage]) -> None:
                 db.delete(question)
         db.flush()
 
-    for key, data in FIRST_STAGE_QUESTIONS.items():
-        stage = by_key[key]
+    stage = by_key["main"]
+    for data in FIRST_STAGE_QUESTIONS.values():
         if db.scalar(select(Question).where(Question.stage_id == stage.id, Question.title == data["title"])):
             continue
         next_position = (db.scalar(select(func.max(Question.position)).where(Question.stage_id == stage.id)) or 0) + 1
@@ -160,6 +150,51 @@ def _install_first_stage_questions(db: Session, stages: list[Stage]) -> None:
             personal_points=0, team_points=5, show_anonymous_answers=True,
         ))
     db.flush()
+
+
+def _merge_first_stage_sections(db: Session, event: Event, stages: list[Stage]) -> list[Stage]:
+    """Merge legacy What/Where/When sections without losing questions or answers."""
+    legacy_keys = {"main", "what", "where", "when"}
+    legacy_titles = {
+        "1 этап · Что? Где? Когда?", "1 этап · Что? Где? Когда",
+        "1 этап · Что?", "1 этап · Где?", "1 этап · Когда?",
+    }
+    sections = [stage for stage in stages if stage.system_key in legacy_keys or stage.title in legacy_titles]
+    if not sections:
+        return stages
+    sections.sort(key=lambda stage: (stage.system_key != "main", stage.position, stage.id))
+    target, sources = sections[0], sections[1:]
+    target.system_key = "main"
+    target.title = "1 этап · Командные вопросы"
+    target.title_kk = "1 кезең · Командалық сұрақтар"
+    target.description = "Единый этап со всеми командными вопросами и свободным ответом."
+    target.description_kk = "Барлық командалық сұрақтар мен еркін жауаптардан тұратын бірыңғай кезең."
+    if not sources:
+        return stages
+    source_order = {stage.id: index for index, stage in enumerate(sorted(sections, key=lambda stage: stage.position))}
+    questions = list(db.scalars(
+        select(Question).where(Question.stage_id.in_([stage.id for stage in sections]))
+        .order_by(Question.stage_id, Question.position, Question.id)
+    ).all())
+    ordered_questions = [item[3] for item in sorted(
+        (source_order[question.stage_id], question.position, question.id, question)
+        for question in questions
+    )]
+    # First move positions out of the unique range, then attach every question
+    # to the surviving stage in its former stage/question order.
+    for offset, question in enumerate(ordered_questions, 10000):
+        question.position = offset
+    db.flush()
+    for position, question in enumerate(ordered_questions, 1):
+        question.stage = target
+        question.position = position
+    source_ids = [stage.id for stage in sources]
+    if source_ids:
+        db.execute(delete(GameProgramStage).where(GameProgramStage.stage_id.in_(source_ids)))
+        for source in sources:
+            db.delete(source)
+    db.flush()
+    return list(db.scalars(select(Stage).where(Stage.event_id == event.id).order_by(Stage.position)).all())
 
 
 def _legacy_matches(stages: list[Stage]) -> dict[str, Stage]:
@@ -181,8 +216,8 @@ def _legacy_matches(stages: list[Stage]) -> dict[str, Stage]:
         unassigned.remove(choice)
 
     first_quiz = next((stage for stage in unassigned if stage.stage_type == StageType.QUIZ), None)
-    if first_quiz and "what" not in matches:
-        matches["what"] = first_quiz
+    if first_quiz and "main" not in matches:
+        matches["main"] = first_quiz
 
     return matches
 
@@ -192,6 +227,7 @@ def ensure_fixed_program(db: Session, event: Event) -> GameProgram:
     stages = list(db.scalars(
         select(Stage).where(Stage.event_id == event.id).order_by(Stage.position)
     ).all())
+    stages = _merge_first_stage_sections(db, event, stages)
     matches = _legacy_matches(stages)
     next_position = (db.scalar(select(func.max(Stage.position)).where(Stage.event_id == event.id)) or 0) + 1
 
@@ -218,6 +254,11 @@ def ensure_fixed_program(db: Session, event: Event) -> GameProgram:
             db.flush()
         else:
             stage.system_key = definition.key
+            if definition.key == "main":
+                stage.title = definition.title
+                stage.title_kk = definition.title_kk
+                stage.description = definition.description
+                stage.description_kk = definition.description_kk
             if stage.title in {"1 этап · Что? Где? Когда?", "1 этап · Что? Где? Когда"}:
                 stage.title = definition.title
                 stage.title_kk = definition.title_kk
@@ -274,7 +315,7 @@ def ensure_fixed_program(db: Session, event: Event) -> GameProgram:
     # Give the captain enough time to choose a respondent and type the team's
     # answer in every block of stage one. Upgrade only old standard values so
     # an organizer's deliberate custom timing remains untouched.
-    for first_stage in (stage for stage in ordered_stages if stage.system_key in {"what", "where", "when"}):
+    for first_stage in (stage for stage in ordered_stages if stage.system_key == "main"):
         if first_stage.default_submission_seconds in {20, 30}:
             first_stage.default_submission_seconds = 40
         for question in first_stage.questions:
@@ -316,7 +357,7 @@ def ensure_fixed_program(db: Session, event: Event) -> GameProgram:
         program = GameProgram(
             event_id=event.id,
             title=FIXED_PROGRAM_TITLE,
-            description="Тестовый вопрос → Что? → Где? → Когда? → выбор решения → детектив → резервный раунд",
+            description="Тестовый вопрос → единый этап командных вопросов → выбор решения → детектив → дополнительные вопросы",
         )
         db.add(program)
         db.flush()

@@ -34,18 +34,18 @@ def test_fixed_program_preserves_existing_questions_and_is_idempotent():
         db.commit()
 
         assert first.id == second.id
-        assert legacy_stage.system_key == "what"
-        assert db.scalar(select(func.count(Stage.id)).where(Stage.event_id == event.id)) == 7
+        assert legacy_stage.system_key == "main"
+        assert db.scalar(select(func.count(Stage.id)).where(Stage.event_id == event.id)) == 5
         assert db.scalar(select(func.count(GameProgram.id)).where(GameProgram.event_id == event.id)) == 1
-        assert db.scalar(select(func.count(GameProgramStage.id)).where(GameProgramStage.program_id == first.id)) == 7
-        assert db.scalar(select(func.count(Question.id)).where(Question.stage_id == legacy_stage.id)) == 2
+        assert db.scalar(select(func.count(GameProgramStage.id)).where(GameProgramStage.program_id == first.id)) == 5
+        assert db.scalar(select(func.count(Question.id)).where(Question.stage_id == legacy_stage.id)) == 4
         assert db.scalar(select(Question).where(
             Question.stage_id == legacy_stage.id,
             Question.title == "Существующий вопрос",
         )) is not None
 
 
-def test_combined_demo_stage_is_split_into_what_where_when():
+def test_combined_demo_stage_becomes_one_question_stage():
     with SessionLocal() as db:
         event = Event(name="Assyl 100")
         db.add(event); db.flush()
@@ -66,18 +66,14 @@ def test_combined_demo_stage_is_split_into_what_where_when():
         stages = {stage.system_key: stage for stage in db.scalars(
             select(Stage).where(Stage.event_id == event.id)
         ).all()}
-        assert stages["what"].title == "1 этап · Что?"
-        question_titles = {
-            key: list(db.scalars(select(Question.title).where(Question.stage_id == stages[key].id)).all())
-            for key in ("what", "where", "when")
-        }
-        assert question_titles["what"] == ["Фунт мяса"]
-        assert question_titles["where"] == ["Исчезнувшие следы"]
-        assert question_titles["when"] == ["Братья и сёстры"]
+        assert stages["main"].title == "1 этап · Командные вопросы"
+        question_titles = list(db.scalars(
+            select(Question.title).where(Question.stage_id == stages["main"].id).order_by(Question.position)
+        ).all())
+        assert question_titles == ["Фунт мяса", "Исчезнувшие следы", "Братья и сёстры"]
         assert all(
             question.submission_seconds == 60
-            for key in ("what", "where", "when")
-            for question in db.scalars(select(Question).where(Question.stage_id == stages[key].id)).all()
+            for question in db.scalars(select(Question).where(Question.stage_id == stages["main"].id)).all()
         )
         test_stage = db.scalar(select(Stage).where(Stage.event_id == event.id, Stage.system_key == "test"))
         assert test_stage.title == "Этап 0 · Тестовый раунд"
@@ -138,6 +134,6 @@ def test_fixed_stages_are_linked_to_the_active_program_in_legacy_database():
             .where(GameProgramStage.program_id == active_program.id)
             .order_by(GameProgramStage.position)
         ).all()
-        assert len(links) == 7
+        assert len(links) == 5
         assert links[0].stage.system_key == "test"
         assert len(links[0].stage.questions) == 1

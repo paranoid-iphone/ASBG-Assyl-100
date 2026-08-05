@@ -379,7 +379,7 @@ def event_dashboard(
         apply_three_minute_timings(db, event)
         db.commit()
     has_content = db.scalar(select(Stage.id).where(Stage.event_id == event.id).limit(1)) is not None
-    if not event.slides_initialized and not has_content:
+    if has_content or not event.slides_initialized:
         ensure_fixed_program(db, event)
         db.commit()
     teams = db.scalars(select(Team).where(Team.event_id == event.id).order_by(Team.name)).all()
