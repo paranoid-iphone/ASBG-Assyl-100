@@ -2843,6 +2843,22 @@ async def send_message(
         if not player or not player.team or player.team.event_id != event_id or not player.telegram_user_id:
             raise HTTPException(400, "Участник не подключён к Telegram")
         targets = [player.telegram_user_id]
+    elif target_type == "team_members":
+        team = db.get(Team, team_id)
+        if not team or team.event_id != event_id:
+            raise HTTPException(400, "Команда не найдена")
+        targets = [
+            player.telegram_user_id for player in db.scalars(
+                select(Player).where(
+                    Player.team_id == team.id,
+                    Player.role != PlayerRole.ADMIN,
+                    Player.active.is_(True),
+                    Player.telegram_user_id.is_not(None),
+                ).order_by(Player.full_name)
+            ).all()
+        ]
+        if not targets:
+            raise HTTPException(409, "В этой команде нет активных участников, подключённых к Telegram")
     elif target_type == "team_chat":
         team = db.get(Team, team_id)
         if not team or team.event_id != event_id or not team.telegram_chat_id:
@@ -2881,4 +2897,4 @@ async def send_message(
         await bot.session.close()
     audit(db, actor, "message.send", event, f"target={target_type}; delivered={delivered}; failed={failed}")
     db.commit()
-    return go(event_id, "messages")
+    return go(event_id, "messages", f"Сообщение доставлено: {delivered}. Ошибок: {failed}.")
