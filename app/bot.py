@@ -1084,19 +1084,25 @@ def build_dispatcher() -> Dispatcher:
 
 async def run_bot(token: str) -> None:
     BOT_RUNTIME.update(configured=bool(token), connected=False, username=None, error=None)
-    bot = Bot(token)
-    try:
-        me = await bot.get_me()
-        BOT_RUNTIME.update(connected=True, username=me.username, error=None)
-        watchdog = asyncio.create_task(captain_election_watchdog(bot))
+    while True:
+        bot = Bot(token)
+        watchdog = None
         try:
+            me = await bot.get_me()
+            BOT_RUNTIME.update(connected=True, username=me.username, error=None)
+            watchdog = asyncio.create_task(captain_election_watchdog(bot))
             await build_dispatcher().start_polling(bot)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Render briefly overlaps old and new instances during deployment.
+            # Telegram permits only one long-polling consumer, so retry after
+            # the previous instance has stopped instead of disabling the bot.
+            BOT_RUNTIME.update(connected=False, error=f"{type(exc).__name__}: {exc}")
+            await asyncio.sleep(5)
         finally:
-            watchdog.cancel()
-            with suppress(asyncio.CancelledError):
-                await watchdog
-    except Exception as exc:
-        BOT_RUNTIME.update(connected=False, error=f"{type(exc).__name__}: {exc}")
-        raise
-    finally:
-        await bot.session.close()
+            if watchdog:
+                watchdog.cancel()
+                with suppress(asyncio.CancelledError):
+                    await watchdog
+            await bot.session.close()
