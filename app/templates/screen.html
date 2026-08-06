@@ -6,7 +6,7 @@
 <title>Большой экран</title>
 <style>
 *{box-sizing:border-box}
-body{margin:0;background:#0c1220;color:#f8fafc;font-family:Inter,system-ui;overflow:hidden}
+body{--text-scale:1;margin:0;background:#0c1220;color:#f8fafc;font-family:Inter,system-ui;overflow:hidden}
 .screen{height:100vh;display:flex;flex-direction:column;align-items:center;text-align:center;padding:5vh 6vw;cursor:pointer;user-select:none;background:radial-gradient(circle at 85% 15%,#243b80 0,transparent 35%),linear-gradient(145deg,#0c1220,#121b31)}
 .center{flex:1;width:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
 .eyebrow,.question-title,.answer-label{text-transform:uppercase;letter-spacing:.18em;color:#91a7ff;font-size:1.3vw;font-weight:800}
@@ -20,24 +20,32 @@ body{margin:0;background:#0c1220;color:#f8fafc;font-family:Inter,system-ui;overf
 .choice-actions{display:flex;gap:1.2vw;justify-content:center;margin-top:2.2vw}.choice-actions .finish{background:#fff;color:#9b1836;border:2px solid #c83555}.choice-actions .extra{background:#1749c6;color:#fff;border:2px solid #1749c6}
 .answer-wall{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1.2vw;width:min(1200px,90vw);max-height:72vh;overflow:hidden}.answer-card{background:#ffffff12;border:1px solid #ffffff24;border-radius:16px;padding:1.2vw 1.5vw;font-size:1.65vw;text-align:left}.answer-card small{display:block;color:#aeb8ca;margin-top:.5vw}
 .options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.7vw 2vw;max-width:82vw;margin:1.2vw auto 0;text-align:left;font-size:1.55vw;color:#dbe4f7}.option{padding:.55vw 1vw;border-left:3px solid #91a7ff;background:#ffffff0a;border-radius:4px}
-.hint{position:fixed;right:20px;bottom:16px;color:#ffffff88;font-size:13px}.volume{position:fixed;left:20px;bottom:14px;display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;background:#08101dcc;color:#d7deeb;font-size:13px;z-index:5}.volume input{width:150px;accent-color:#91a7ff}.volume output{min-width:38px;text-align:right;font-variant-numeric:tabular-nums}.busy{pointer-events:none}
+.hint{position:fixed;right:20px;bottom:16px;color:#ffffff88;font-size:13px}.screen-controls{position:fixed;left:20px;bottom:14px;display:grid;gap:7px;z-index:8}.display-range{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;background:#08101dcc;color:#d7deeb;font-size:13px}.display-range input{width:150px;accent-color:#91a7ff}.display-range output{min-width:38px;text-align:right;font-variant-numeric:tabular-nums}.busy{pointer-events:none}
 .timer-tools{position:fixed;right:20px;top:18px;display:none;gap:8px;z-index:6}.timer-tools.visible{display:flex}.timer-tools button,.music-toggle{border:1px solid #ffffff30;background:#08101ddd;color:#fff;border-radius:9px;padding:9px 12px;font-weight:750;cursor:pointer}.music-toggle{position:fixed;left:20px;top:18px;z-index:6}.music-toggle.active{background:#2945aa}
 .slide-nav{position:fixed;inset:50% 18px auto;display:flex;justify-content:space-between;transform:translateY(-50%);pointer-events:none;z-index:7}.slide-nav button{pointer-events:auto;width:54px;height:70px;border:1px solid #ffffff2b;border-radius:14px;background:#07101ac7;color:#fff;font-size:30px;cursor:pointer;opacity:.55}.slide-nav button:hover,.slide-nav button:focus-visible{opacity:1;background:#2945aa;outline:none}.slide-nav button:disabled{opacity:.18;cursor:wait}
 .primary-kk{font-size:5.4vw;font-weight:900;line-height:1.05;color:inherit;max-width:90vw}.secondary-ru{font-size:1.75vw;line-height:1.25;color:#b7c2d8;margin-top:1vw;max-width:82vw}.support-kk{font-size:2.25vw;font-weight:750;color:inherit}.support-ru{font-size:1.35vw;color:#b7c2d8;margin-top:.45vw}
 body[data-theme="OUTDOOR"]{background:#f5f8ff;color:#071632}body[data-theme="OUTDOOR"] .screen{background:radial-gradient(circle at 85% 12%,#c9dcff 0,transparent 32%),linear-gradient(145deg,#fff,#e8f0ff)}body[data-theme="OUTDOOR"] .description,body[data-theme="OUTDOOR"] .secondary-ru,body[data-theme="OUTDOOR"] .support-ru,body[data-theme="OUTDOOR"] .explanation{color:#354866}body[data-theme="OUTDOOR"] .eyebrow,body[data-theme="OUTDOOR"] .question-title,body[data-theme="OUTDOOR"] .answer-label,body[data-theme="OUTDOOR"] .lang{color:#1749c6}body[data-theme="OUTDOOR"] .timer{color:#071632}body[data-theme="OUTDOOR"] .timer.danger{color:#cf163d}body[data-theme="OUTDOOR"] .answer{color:#087447}body[data-theme="OUTDOOR"] .language-block+.language-block{border-color:#17366535}body[data-theme="OUTDOOR"] .answer-card,body[data-theme="OUTDOOR"] .option{background:#fff;border-color:#244c9b38;color:#071632}body[data-theme="OUTDOOR"] .hint{color:#283c5d}body[data-theme="OUTDOOR"] .volume,body[data-theme="OUTDOOR"] .timer-tools button,body[data-theme="OUTDOOR"] .music-toggle,body[data-theme="OUTDOOR"] .slide-nav button{background:#fff;color:#071632;border-color:#17366555;box-shadow:0 5px 18px #244c9b20}
 body[data-theme="WARM"]{background:#fff7df;color:#251a07}body[data-theme="WARM"] .screen{background:radial-gradient(circle at 85% 12%,#ffd98b 0,transparent 34%),linear-gradient(145deg,#fffdf6,#fff0c9)}body[data-theme="WARM"] .description,body[data-theme="WARM"] .secondary-ru,body[data-theme="WARM"] .support-ru,body[data-theme="WARM"] .explanation{color:#624f2d}body[data-theme="WARM"] .eyebrow,body[data-theme="WARM"] .question-title,body[data-theme="WARM"] .answer-label,body[data-theme="WARM"] .lang{color:#a13d14}body[data-theme="WARM"] .timer{color:#251a07}body[data-theme="WARM"] .timer.danger{color:#c51f3d}
+body[data-theme="OUTDOOR"] .display-range,body[data-theme="WARM"] .display-range{background:#fff;color:#071632;border:1px solid #17366555;box-shadow:0 5px 18px #244c9b20}
+.eyebrow,.question-title,.answer-label,.practice-badge,.event,.description,.question,.lang,.answer,.explanation,.screen-action,.answer-card,.options,.primary-kk,.secondary-ru,.support-kk,.support-ru{zoom:var(--text-scale)}
 @media(max-aspect-ratio:1/1){.question{font-size:6vw}.event{font-size:10vw}.description{font-size:4vw}.timer{font-size:22vw}.answer{font-size:8vw}}
 </style>
 </head>
 <body data-theme="OUTDOOR">
 <div id="app" class="screen"><div class="center"><div class="event">Подключение…</div></div></div>
-<label id="volumeControl" class="volume">🔊 <input id="volume" type="range" min="0" max="100" step="1" value="55" aria-label="Громкость"><output id="volumeValue">55%</output></label>
+<div id="screenControls" class="screen-controls">
+  <label id="fontSizeControl" class="display-range">🔠 <input id="fontSize" type="range" min="80" max="150" step="5" value="100" aria-label="Размер текста"><output id="fontSizeValue">100%</output></label>
+  <label id="volumeControl" class="display-range volume">🔊 <input id="volume" type="range" min="0" max="100" step="1" value="55" aria-label="Громкость"><output id="volumeValue">55%</output></label>
+</div>
 <button id="musicToggle" class="music-toggle">♫ Фоновая музыка</button>
 <div id="timerTools" class="timer-tools"><button id="timerPlay">▶ Старт</button><button id="timerPause">⏸ Пауза</button><button id="timerReset">↺ Сброс</button><button data-adjust="-10">−10 сек.</button><button data-adjust="10">+10 сек.</button><button data-adjust="30">+30 сек.</button></div>
 <div class="slide-nav"><button id="previousSlide" aria-label="Предыдущий слайд">←</button><button id="nextSlide" aria-label="Следующий слайд">→</button></div>
 <div class="hint">← → — навигация от начала до конца · ЛКМ — продолжить · ПКМ — назад · F11 — полный экран</div>
 <script>
 const app=document.getElementById('app');
+const screenControls=document.getElementById('screenControls');
+const fontSizeInput=document.getElementById('fontSize');
+const fontSizeValue=document.getElementById('fontSizeValue');
 const volumeControl=document.getElementById('volumeControl');
 const volumeInput=document.getElementById('volume');
 const volumeValue=document.getElementById('volumeValue');
@@ -47,8 +55,14 @@ const previousSlide=document.getElementById('previousSlide'),nextSlide=document.
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state=null,busy=false,previousRemaining=null,gongPlayed=false,audioContext=null,musicTimer=null,musicStep=0;
 let masterVolume=Math.max(0,Math.min(1,Number(localStorage.getItem('screenVolume')??55)/100));
+let textScale=Math.max(.8,Math.min(1.5,Number(localStorage.getItem('screenTextScale')??100)/100));
 const volumeGain=()=>masterVolume*masterVolume;
+const applyTextScale=()=>document.body.style.setProperty('--text-scale',String(textScale));
+fontSizeInput.value=String(Math.round(textScale*100));fontSizeValue.value=`${fontSizeInput.value}%`;applyTextScale();
 volumeInput.value=String(Math.round(masterVolume*100));volumeValue.value=`${volumeInput.value}%`;
+screenControls.addEventListener('click',event=>event.stopPropagation());
+screenControls.addEventListener('pointerdown',event=>event.stopPropagation());
+fontSizeInput.addEventListener('input',event=>{textScale=Number(event.target.value)/100;fontSizeValue.value=`${event.target.value}%`;localStorage.setItem('screenTextScale',event.target.value);applyTextScale()});
 volumeControl.addEventListener('click',event=>event.stopPropagation());
 volumeControl.addEventListener('pointerdown',event=>event.stopPropagation());
 volumeInput.addEventListener('input',event=>{masterVolume=Number(event.target.value)/100;volumeValue.value=`${event.target.value}%`;localStorage.setItem('screenVolume',event.target.value)});
