@@ -64,6 +64,7 @@ class Event(Base):
     timer_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     timer_duration_seconds: Mapped[int] = mapped_column(Integer, default=180)
     default_question_duration: Mapped[int] = mapped_column(Integer, default=180)
+    captain_election_duration_seconds: Mapped[int] = mapped_column(Integer, default=60)
     default_personal_points: Mapped[float] = mapped_column(Float, default=1)
     default_team_points: Mapped[float] = mapped_column(Float, default=5)
     timer_sound_enabled: Mapped[bool] = mapped_column(Boolean, default=True)

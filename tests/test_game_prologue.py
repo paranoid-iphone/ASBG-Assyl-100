@@ -17,7 +17,7 @@ def setup_function():
 
 def test_program_starts_with_intro_then_captain_stage_and_rules():
     with SessionLocal() as db:
-        event = Event(name="Prologue")
+        event = Event(name="Prologue", captain_election_duration_seconds=95)
         db.add(event); db.flush()
         stage = Stage(event_id=event.id, title="Test", position=1)
         db.add(stage); db.flush()
@@ -39,6 +39,8 @@ def test_program_starts_with_intro_then_captain_stage_and_rules():
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "program_slide"
         assert client.get(f"/api/screen/{token}").json()["slide"]["title"] == "Program"
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "captain_election_ready"
+        election_state = client.get(f"/api/screen/{token}").json()
+        assert election_state["timer"]["remaining"] == 95
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "captain_election_complete"
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "rules"
         assert client.post(f"/api/screen/{token}/advance").json()["action"] == "stage_intro"

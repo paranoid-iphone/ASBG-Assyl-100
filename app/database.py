@@ -74,6 +74,7 @@ def ensure_schema_compatibility():
         "timings_v2_applied": "BOOLEAN NOT NULL DEFAULT FALSE",
         "kazakh_primary_applied": "BOOLEAN NOT NULL DEFAULT FALSE",
         "screen_theme": "VARCHAR(20) NOT NULL DEFAULT 'OUTDOOR'",
+        "captain_election_duration_seconds": "INTEGER NOT NULL DEFAULT 60",
     }
     with engine.begin() as connection:
         for name, definition in game_additions.items():

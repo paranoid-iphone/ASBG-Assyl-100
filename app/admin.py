@@ -30,7 +30,7 @@ from .runtime_state import (
 )
 from .public_url import public_base_url
 from .seed_game_content import seed_game_content_for_event
-from .captain_elections import ELECTION_DURATION_SECONDS, start_captain_election_for_team
+from .captain_elections import start_captain_election_for_team
 from .surveys import (
     COMMUNICATION_QUESTION_KK, COMMUNICATION_QUESTION_RU,
     FEEDBACK_QUESTION_KK, FEEDBACK_QUESTION_RU,
@@ -1290,7 +1290,7 @@ def restart_live_program(
     event.current_slide_id = None
     event.pause_snapshot_json = ""
     event.timer_started_at = None
-    event.timer_duration_seconds = ELECTION_DURATION_SECONDS
+    event.timer_duration_seconds = event.captain_election_duration_seconds
     clear_persistent_navigation(event)
     audit(db, actor, "live.restart", event, f"program={program.id}; questions={len(question_ids)}; archived={archived}")
     db.commit()
@@ -1919,7 +1919,7 @@ async def launch_program(
     else:
         event.display_mode = "INTRO"
     event.timer_started_at = None
-    event.timer_duration_seconds = ELECTION_DURATION_SECONDS
+    event.timer_duration_seconds = event.captain_election_duration_seconds
     clear_persistent_navigation(event)
     first_detail = "stage_intro" if start_at_first_stage else "intro"
     audit(db, actor, "program.launch", program, first_detail)
@@ -2296,6 +2296,7 @@ def export_event_package(event_id: int, db: Session = Depends(get_db), actor=Dep
             "name": event.name,
             "description": event.description,
             "default_question_duration": event.default_question_duration,
+            "captain_election_duration_seconds": event.captain_election_duration_seconds,
             "default_personal_points": event.default_personal_points,
             "default_team_points": event.default_team_points,
             "timer_sound_enabled": event.timer_sound_enabled,
@@ -2368,6 +2369,7 @@ async def import_event_package(
     event.name = str(event_data.get("name", event.name)).strip() or event.name
     event.description = str(event_data.get("description", event.description))
     event.default_question_duration = max(5, min(int(event_data.get("default_question_duration", 180)), 3600))
+    event.captain_election_duration_seconds = max(10, min(int(event_data.get("captain_election_duration_seconds", 60)), 600))
     event.default_personal_points = max(0, min(float(event_data.get("default_personal_points", 1)), 10000))
     event.default_team_points = max(0, min(float(event_data.get("default_team_points", 5)), 10000))
     event.timer_sound_enabled = bool(event_data.get("timer_sound_enabled", True))
@@ -2663,6 +2665,7 @@ def score(event_id: int, target_type: str = Form(...), target_id: int = Form(...
 def update_settings(
     event_id: int,
     default_question_duration: int = Form(...),
+    captain_election_duration_seconds: int = Form(60),
     default_personal_points: float = Form(...),
     default_team_points: float = Form(...),
     timer_sound_enabled: bool = Form(False),
@@ -2673,6 +2676,7 @@ def update_settings(
 ):
     event = require_event(db, event_id)
     event.default_question_duration = max(5, min(default_question_duration, 3600))
+    event.captain_election_duration_seconds = max(10, min(captain_election_duration_seconds, 600))
     event.default_personal_points = max(0, min(default_personal_points, 10000))
     event.default_team_points = max(0, min(default_team_points, 10000))
     event.timer_sound_enabled = timer_sound_enabled
@@ -2682,7 +2686,7 @@ def update_settings(
         event.display_language = display_language
     audit(
         db, actor, "event.settings", event,
-        f"default_duration={event.default_question_duration}; "
+        f"default_duration={event.default_question_duration}; captain_election_duration={event.captain_election_duration_seconds}; "
         f"personal_points={event.default_personal_points}; team_points={event.default_team_points}; "
         f"sound={timer_sound_enabled}",
     )
@@ -2830,7 +2834,9 @@ async def start_captain_election(
     bot = Bot(get_settings().telegram_bot_token)
     try:
         try:
-            await start_captain_election_for_team(db, team, bot, actor)
+            await start_captain_election_for_team(
+                db, team, bot, actor, require_event(db, event_id).captain_election_duration_seconds,
+            )
         except ValueError as exc:
             raise HTTPException(409, str(exc))
     finally:

@@ -12,7 +12,7 @@ from .database import get_db
 from .detective_runtime import finish_detective_stage, start_detective_stage
 from .models import Answer, AnswerScope, CaptainElection, DetectiveCase, DetectiveSubmission, Event, EventSlide, GameProgram, GameProgramStage, PlayerRole, Question, QuestionStatus, Stage, StageType, Team
 from .config import get_settings
-from .captain_elections import ELECTION_DURATION_SECONDS, start_captain_election_for_team
+from .captain_elections import start_captain_election_for_team
 from .services import leaderboard, set_question_status
 from .telegram_sync import notify_team_chats
 from .runtime_state import (
@@ -48,7 +48,7 @@ def screen_state(token: str, db: Session = Depends(get_db)):
         # presentation state.
         event.display_mode = "CAPTAIN_ELECTION_READY"
         event.timer_started_at = None
-        event.timer_duration_seconds = ELECTION_DURATION_SECONDS
+        event.timer_duration_seconds = event.captain_election_duration_seconds
         db.commit()
     question = db.get(Question, event.current_question_id) if event.current_question_id else None
     elapsed = (datetime.utcnow() - event.timer_started_at).total_seconds() if event.timer_started_at else None
@@ -302,7 +302,7 @@ async def advance_screen(token: str, db: Session = Depends(get_db)):
             db.commit()
             return {"action": "program_slide", "slide_id": first_slide.id}
         event.display_mode = "CAPTAIN_ELECTION_READY"
-        event.timer_duration_seconds = ELECTION_DURATION_SECONDS
+        event.timer_duration_seconds = event.captain_election_duration_seconds
         event.timer_started_at = None
         db.commit()
         return {"action": "captain_election_ready"}
@@ -319,7 +319,7 @@ async def advance_screen(token: str, db: Session = Depends(get_db)):
             return {"action": "program_slide", "slide_id": next_slide.id}
         event.current_slide_id = None
         event.display_mode = "CAPTAIN_ELECTION_READY"
-        event.timer_duration_seconds = ELECTION_DURATION_SECONDS
+        event.timer_duration_seconds = event.captain_election_duration_seconds
         event.timer_started_at = None
         db.commit()
         return {"action": "captain_election_ready"}
@@ -588,6 +588,8 @@ async def start_screen_timer(token: str, db: Session = Depends(get_db)):
         token_value = get_settings().telegram_bot_token
         if not token_value:
             raise HTTPException(409, "Telegram-бот не настроен")
+        duration_seconds = max(10, min(event.captain_election_duration_seconds, 600))
+        event.timer_duration_seconds = duration_seconds
         bot = Bot(token_value)
         try:
             for team in missing_teams:
@@ -597,15 +599,21 @@ async def start_screen_timer(token: str, db: Session = Depends(get_db)):
                 if not active:
                     try:
                         await start_captain_election_for_team(
-                            db, team, bot, "screen", event.timer_duration_seconds,
+                            db, team, bot, "screen", duration_seconds,
                         )
                     except ValueError as exc:
                         raise HTTPException(409, str(exc))
         finally:
             await bot.session.close()
+        started_at = datetime.utcnow()
+        deadline = started_at + timedelta(seconds=duration_seconds)
+        for election in db.scalars(select(CaptainElection).join(Team).where(
+            Team.event_id == event.id, CaptainElection.active.is_(True)
+        )).all():
+            election.expires_at = deadline
         event.display_mode = "CAPTAIN_ELECTION_RUNNING"
-        event.timer_duration_seconds = max(10, min(event.timer_duration_seconds, 600))
-        event.timer_started_at = datetime.utcnow()
+        event.timer_duration_seconds = duration_seconds
+        event.timer_started_at = started_at
         db.commit()
         return {"action": "captain_election_start", "mode": event.display_mode}
     question = db.get(Question, event.current_question_id) if event.current_question_id else None
