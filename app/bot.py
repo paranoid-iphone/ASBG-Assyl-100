@@ -59,7 +59,7 @@ def main_keyboard(role: PlayerRole, language: str = "RU") -> ReplyKeyboardMarkup
 async def player_info(message: Message):
     with SessionLocal() as db:
         player = get_player_by_telegram(db, str(message.from_user.id))
-        if not player:
+        if not player or not player.team:
             return None
         return {
             "id": player.id, "name": player.full_name, "role": player.role,
@@ -71,6 +71,16 @@ async def player_info(message: Message):
 
 async def pending_info(message: Message):
     with SessionLocal() as db:
+        unassigned = db.scalar(select(Player).where(
+            Player.telegram_user_id == str(message.from_user.id),
+            Player.team_id.is_(None),
+        ))
+        if unassigned and unassigned.event:
+            return {
+                "name": unassigned.full_name,
+                "event_name": unassigned.event.name,
+                "language": unassigned.preferred_language,
+            }
         pending = db.scalar(select(PendingRegistration).where(
             PendingRegistration.telegram_user_id == str(message.from_user.id)
         ))

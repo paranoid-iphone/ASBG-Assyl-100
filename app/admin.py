@@ -417,7 +417,15 @@ def event_dashboard(
         apply_three_minute_timings(db, event)
         db.commit()
     teams = db.scalars(select(Team).where(Team.event_id == event.id).order_by(Team.name)).all()
-    players = db.scalars(select(Player).join(Team).where(Team.event_id == event.id).order_by(Team.name, Player.full_name)).all()
+    players = db.scalars(
+        select(Player).outerjoin(Team).where(
+            (Player.event_id == event.id) | (Team.event_id == event.id)
+        ).order_by(Team.name, Player.full_name)
+    ).all()
+    for player in players:
+        if player.event_id is None:
+            player.event_id = event.id
+    unassigned_players = [player for player in players if player.team_id is None]
     pending_registrations = db.scalars(
         select(PendingRegistration).where(PendingRegistration.event_id == event.id)
         .order_by(PendingRegistration.created_at)
@@ -472,7 +480,8 @@ def event_dashboard(
     template_name = "content_page.html" if tab == "content" else "event_dashboard.html"
     return templates.TemplateResponse(request, template_name, {
         "tab": tab, "event": event, "teams": teams, "players": players,
-        "pending_registrations": pending_registrations, "stages": stages, "programs": programs, "slides": slides,
+        "pending_registrations": pending_registrations, "unassigned_players": unassigned_players,
+        "stages": stages, "programs": programs, "slides": slides,
         "active_program": active_program,
         "roster_locked": active_program is not None and active_program.status == "RUNNING",
         "roster_paused": active_program is not None and active_program.status == "PAUSED",
@@ -1443,7 +1452,7 @@ def create_player(event_id: int, team_id: int = Form(...), full_name: str = Form
         )).all():
             captain.role = PlayerRole.PLAYER
     code = registration_code.strip().upper() or f"MANUAL-{secrets.token_hex(8).upper()}"
-    player = Player(team_id=team_id, full_name=full_name, registration_code=code, role=role)
+    player = Player(event_id=event_id, team_id=team_id, full_name=full_name, registration_code=code, role=role)
     db.add(player); db.flush(); clear_detective_cases_for_teams(db, [team.id]); audit(db, actor, "player.create", player, full_name); db.commit()
     return go(event_id, "people")
 
@@ -1493,7 +1502,7 @@ def edit_player(
 
 @router.post("/events/{event_id}/players/{player_id}/delete")
 def delete_player(
-    event_id: int, player_id: int, confirmation: str = Form(...),
+    event_id: int, player_id: int, confirmation: str = Form(...), confirmed: bool = Form(False),
     db: Session = Depends(get_db), actor=Depends(admin_auth),
 ):
     require_roster_unlocked(db, event_id)
@@ -1502,6 +1511,8 @@ def delete_player(
         raise HTTPException(404, "Игрок не найден")
     if confirmation.strip() != player.full_name:
         raise HTTPException(400, "Введите точное имя участника для удаления")
+    if not confirmed:
+        raise HTTPException(400, "Подтвердите безвозвратное удаление участника")
     running = db.scalar(select(Stage).where(
         Stage.event_id == event_id, Stage.stage_type == StageType.DETECTIVE,
         Stage.detective_status == DetectiveStatus.RUNNING,
@@ -1527,15 +1538,45 @@ def unassign_player(
     player = db.get(Player, player_id)
     if not player or not player.team or player.team.event_id != event_id:
         raise HTTPException(404, "Участник не найден")
-    if not player.telegram_user_id:
-        raise HTTPException(409, "Участник без Telegram не может быть возвращён в регистрационный пул")
     team_id = player.team_id
     name = player.full_name
-    return_player_to_registration_pool(db, player, event_id)
-    delete_player_dependencies(db, player)
+    player.event_id = event_id
+    player.team_id = None
+    player.role = PlayerRole.PLAYER
     clear_detective_cases_for_teams(db, [team_id])
-    db.delete(player)
     audit(db, actor, "player.unassign", require_event(db, event_id), f"{name}; team={team_id}")
+    db.commit()
+    return go(event_id, "people")
+
+
+@router.post("/events/{event_id}/players/{player_id}/assign")
+def assign_unassigned_player(
+    event_id: int, player_id: int, team_id: int = Form(...),
+    role: PlayerRole = Form(PlayerRole.PLAYER),
+    db: Session = Depends(get_db), actor=Depends(admin_auth),
+):
+    require_roster_unlocked(db, event_id)
+    player = db.get(Player, player_id)
+    team = db.get(Team, team_id)
+    if not player or player.team_id is not None or player.event_id != event_id:
+        raise HTTPException(404, "Нераспределённый участник не найден")
+    if not team or team.event_id != event_id:
+        raise HTTPException(400, "Команда не найдена")
+    current_size = db.scalar(select(func.count(Player.id)).where(
+        Player.team_id == team.id, Player.active.is_(True)
+    )) or 0
+    if current_size >= team.capacity:
+        raise HTTPException(409, "В команде нет свободных мест")
+    if role == PlayerRole.CAPTAIN:
+        for captain in db.scalars(select(Player).where(
+            Player.team_id == team.id, Player.role == PlayerRole.CAPTAIN
+        )).all():
+            captain.role = PlayerRole.PLAYER
+    player.team_id = team.id
+    player.role = role
+    player.active = True
+    clear_detective_cases_for_teams(db, [team.id])
+    audit(db, actor, "player.assign", player, f"team={team.id}; role={role.value}")
     db.commit()
     return go(event_id, "people")
 
@@ -1567,6 +1608,7 @@ async def assign_pending_registration(
         )).all():
             captain.role = PlayerRole.PLAYER
     player = Player(
+        event_id=event_id,
         team_id=team.id,
         full_name=pending.full_name,
         registration_code=f"AUTO-{secrets.token_hex(8).upper()}",
@@ -1651,6 +1693,7 @@ async def assign_pending_registrations_bulk(
                 if created.team_id == team.id and created.role == PlayerRole.CAPTAIN:
                     created.role = PlayerRole.PLAYER
         player = Player(
+            event_id=event_id,
             team_id=team.id,
             full_name=pending.full_name,
             registration_code=f"AUTO-{secrets.token_hex(8).upper()}",

@@ -50,6 +50,15 @@ def ensure_schema_compatibility():
     if "capacity" not in team_columns:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE teams ADD COLUMN capacity INTEGER NOT NULL DEFAULT 10"))
+    player_columns = {column["name"] for column in inspect(engine).get_columns("players")}
+    with engine.begin() as connection:
+        if "event_id" not in player_columns:
+            connection.execute(text("ALTER TABLE players ADD COLUMN event_id INTEGER REFERENCES games(id)"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_players_event_id ON players (event_id)"))
+        connection.execute(text(
+            "UPDATE players SET event_id = (SELECT teams.event_id FROM teams WHERE teams.id = players.team_id) "
+            "WHERE event_id IS NULL AND team_id IS NOT NULL"
+        ))
     election_columns = {column["name"] for column in inspect(engine).get_columns("captain_elections")}
     if "expires_at" not in election_columns:
         with engine.begin() as connection:

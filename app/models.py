@@ -129,6 +129,7 @@ class Player(Base):
     __tablename__ = "players"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int | None] = mapped_column(ForeignKey("games.id"), nullable=True, index=True)
     team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True)
     full_name: Mapped[str] = mapped_column(String(160))
     registration_code: Mapped[str] = mapped_column(String(40), unique=True, index=True)
@@ -140,6 +141,7 @@ class Player(Base):
     preferred_language: Mapped[str] = mapped_column(String(5), default="RU")
 
     team: Mapped[Team | None] = relationship(back_populates="players")
+    event: Mapped[Event | None] = relationship(foreign_keys=[event_id])
 
 
 class PendingRegistration(Base):

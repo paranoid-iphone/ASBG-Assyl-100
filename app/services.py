@@ -74,6 +74,7 @@ def self_register_player(
     if not full_name.strip():
         raise GameError("Имя не может быть пустым.")
     player = Player(
+        event_id=event_id,
         team_id=team.id,
         full_name=full_name.strip(),
         registration_code=f"AUTO-{secrets.token_hex(8).upper()}",

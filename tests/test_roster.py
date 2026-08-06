@@ -20,6 +20,7 @@ def create_registered_player() -> tuple[int, int, int]:
         db.add(team)
         db.flush()
         player = Player(
+            event_id=event.id,
             team_id=team.id,
             full_name="Анна Петрова",
             registration_code="AUTO-1",
@@ -42,11 +43,52 @@ def test_unassign_returns_registered_player_to_pool():
         assert response.status_code == 303
 
     with SessionLocal() as db:
-        pending = db.scalar(select(PendingRegistration).where(PendingRegistration.telegram_user_id == "12345"))
-        assert pending is not None
-        assert pending.full_name == "Анна Петрова"
-        assert db.get(Player, player_id) is None
+        player = db.get(Player, player_id)
+        assert player is not None
+        assert player.full_name == "Анна Петрова"
+        assert player.team_id is None
+        assert player.event_id == event_id
         assert db.get(Team, team_id) is not None
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/admin/events/{event_id}/players/{player_id}/assign",
+            auth=("admin", "change-me"),
+            data={"team_id": team_id, "role": PlayerRole.PLAYER.value},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+
+    with SessionLocal() as db:
+        player = db.get(Player, player_id)
+        assert player is not None
+        assert player.team_id == team_id
+
+
+def test_delete_player_requires_explicit_second_confirmation():
+    event_id, _, player_id = create_registered_player()
+    with SessionLocal() as db:
+        player_name = db.get(Player, player_id).full_name
+
+    with TestClient(app) as client:
+        rejected = client.post(
+            f"/admin/events/{event_id}/players/{player_id}/delete",
+            auth=("admin", "change-me"),
+            data={"confirmation": player_name},
+            follow_redirects=False,
+        )
+        assert rejected.status_code == 400
+
+        deleted = client.post(
+            f"/admin/events/{event_id}/players/{player_id}/delete",
+            auth=("admin", "change-me"),
+            data={"confirmation": player_name, "confirmed": "true"},
+            follow_redirects=False,
+        )
+        assert deleted.status_code == 303
+
+    with SessionLocal() as db:
+        assert db.get(Player, player_id) is None
 
 
 def test_deleting_team_returns_telegram_players_to_pool():
