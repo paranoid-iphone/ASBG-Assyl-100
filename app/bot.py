@@ -3,7 +3,7 @@ from contextlib import suppress
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, F, Router
-from aiogram.filters import Command, CommandStart, StateFilter
+from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, Message, ReplyKeyboardMarkup, ReplyKeyboardRemove
@@ -245,7 +245,23 @@ async def language_selected_inline(callback: CallbackQuery, state: FSMContext):
     elif pending:
         await show_pending_status(callback.message, pending_data)
     else:
-        await begin_registration(callback.message, state)
+        await state.update_data(language=language)
+        with SessionLocal() as db:
+            event = db.scalar(select(Event).where(Event.active.is_(True)).order_by(Event.id))
+        if not event:
+            await state.clear()
+            await callback.message.answer(
+                "Сейчас нет активного мероприятия. Обратитесь к организатору.\n"
+                "Қазір белсенді іс-шара жоқ. Ұйымдастырушыға хабарласыңыз."
+            )
+            return
+        await state.update_data(event_id=event.id, event_name=event.name)
+        await state.set_state(InputState.registration_name)
+        await callback.message.answer(
+            f"Іс-шара: «{event.name}».\nАты-жөніңізді енгізіңіз."
+            if language == "KK" else
+            f"Мероприятие: «{event.name}».\nВведите имя и фамилию."
+        )
 
 
 @router.message(InputState.language, F.text.in_({"Русский", "Қазақша"}))
@@ -1036,20 +1052,27 @@ async def leaderboard_message(message: Message):
     await message.answer("\n".join(lines))
 
 
-@router.message(StateFilter(None))
+@router.message()
 async def first_contact_or_unknown_message(message: Message, state: FSMContext):
-    """Never leave a first-time user without an onboarding response."""
+    """Always explain registration status for any otherwise unhandled message."""
     info = await player_info(message)
-    if not info:
-        pending = await pending_info(message)
-        if pending:
-            await show_pending_status(message, pending)
-            return
-        await begin_registration(message, state)
+    if info:
+        await state.clear()
+        await message.answer(
+            "✅ Вы зарегистрированы. Используйте кнопки главного меню.\n"
+            "✅ Сіз тіркелдіңіз. Негізгі мәзір батырмаларын пайдаланыңыз.",
+            reply_markup=main_keyboard(info["role"], info["language"]),
+        )
         return
+    pending = await pending_info(message)
+    if pending:
+        await show_pending_status(message, pending)
+        return
+    await state.clear()
     await message.answer(
-        "Выберите действие в меню." if info["language"] != "KK" else "Мәзірден әрекетті таңдаңыз.",
-        reply_markup=main_keyboard(info["role"], info["language"]),
+        "❌ Вы ещё не зарегистрированы. Выберите язык, чтобы начать регистрацию.\n"
+        "❌ Сіз әлі тіркелмегенсіз. Тіркелуді бастау үшін тілді таңдаңыз.",
+        reply_markup=language_markup(),
     )
 
 
